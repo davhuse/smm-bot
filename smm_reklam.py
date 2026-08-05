@@ -71,49 +71,27 @@ DEFAULT_SESSION = (
     "_PjhiVUij5IBqx5SAK-4urYCS3gHWCyl-dNmfOlccpm_-UUjPGHbReGIR5BIPtGM5PTKh"
     "LzDuyk0F9vEQ="
 )
-DEFAULT_MESSAGE = """SOSYALPAZAR SMM
-Instagram, TikTok, YouTube, Telegram ve Spotify hizmetleri
+DEFAULT_MESSAGE = """🚀 SOSYALPAZAR SMM HİZMETLERİ 🚀
 
-INSTAGRAM TAKİPÇİ
-Genel takipçi 30 gün telafi — 1K: 27,41 TL
-Hızlı takipçi 30 gün telafi — 1K: 33,88 TL
-Yüksek hızlı takipçi — 1K: 39,66 TL
-Türk takipçi 30 gün telafi — 1K: 241,38 TL
-Türk kaliteli takipçi — 1K: 274,46 TL
-Türk kadın takipçi 30 gün telafi — 1K: 223,50 TL
+🔥 INSTAGRAM
+• Genel Takipçi (1K): 27.41 TL
+• Türk Takipçi (1K): 241.38 TL
+• Beğeni Servisleri (1K): 3.19 TL'den başlayan
 
-INSTAGRAM BEĞENİ
-Genel beğeni 30 gün telafi — 1K: 3,19 TL
-Türk beğeni 30 gün telafi — 1K: 95,18 TL
-Türk kadın/erkek beğeni seçenekleri mevcut
+🔥 TIKTOK
+• Takipçi (1K): 140.60 TL
+• Beğeni (1K): 13.25 TL | İzlenme (1K): 2.38 TL
 
-TIKTOK
-TikTok takipçi 30 gün telafi — 1K: 140,60 TL
-Hızlı TikTok takipçi — 1K: 146,33 TL
-TikTok beğeni 30 gün telafi — 1K: 13,25 TL
-TikTok izlenme 30 gün telafi — 1K: 2,38 TL
-TikTok paylaşım — 1K: 8,99 TL
+🔥 YOUTUBE
+• Abone (1K): 1.021 TL | Beğeni (1K): 64.97 TL
+• Türk İzlenme (1K): 107.45 TL
 
-YOUTUBE
-YouTube abone 30 gün telafi — 1K: 1.021,01 TL
-YouTube beğeni 30 gün telafi — 1K: 64,97 TL
-Türk YouTube izlenme — 1K: 107,45 TL
-YouTube izlenme ve etkileşim paketleri mevcut
+🔥 TELEGRAM & SPOTIFY
+• Telegram Üye (1K): 29.94 TL | Görüntülenme: 81 TL
+• Spotify Takipçi (1K): 13.69 TL
 
-TELEGRAM
-Telegram kanal/grup üyesi — 1K: 29,94 TL
-Telegram abone 30 gün telafi — 1K: 55,39 TL
-Telegram gönderi görüntülenme — 1K: 81,08 TL
-
-SPOTIFY
-Spotify takipçi 30 gün telafi — 1K: 13,69 TL
-Spotify kaydetme — 1K: 19,68 TL
-
-Seçili servislerde hızlı başlangıç
-Uygun fiyatlı paket seçenekleri
-Sipariş için şifre gerekmez
-Güncel servis, miktar ve sipariş bilgisi için DM:
-@SosyalPazarSMM"""
+⚡ 30 Gün Telafili & Şifresiz Hizmet
+👉 Sipariş ve Detaylı Bilgi İçin DM: @SosyalPazarSMM"""
 
 DEFAULT_GROUPS = (
     "kuponindirimsatis,satcek,kuponsat,ceksat,ticaretcanavari,alsatticarettz,"
