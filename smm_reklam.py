@@ -162,9 +162,21 @@ def fs_set_state_smm(delivery_state_json_str):
         req.add_header('Content-Type', 'application/json')
         with urllib.request.urlopen(req, timeout=10) as response:
             pass
+    except urllib.error.HTTPError as e:
+        # If document doesn't exist yet, patch will fail with 404. We need to create it by posting to the collection instead.
+        if e.code == 404:
+            try:
+                url_create = f"{FS_BASE_URL}/reklam?documentId=smm_state&key={FS_API_KEY}"
+                req = urllib.request.Request(url_create, data=payload, method='POST')
+                req.add_header('Content-Type', 'application/json')
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    pass
+            except Exception as create_e:
+                add_log(f"Firestore create error: {create_e}", "WARNING")
+        else:
+            add_log(f"Firestore patch error: {e}", "WARNING")
     except Exception as e:
         add_log(f"Firestore set error: {e}", "WARNING")
-
 
 def load_state():
     try:
@@ -192,9 +204,49 @@ def save_state(value):
         tmp.write_text(json_str, encoding="utf-8")
         tmp.replace(STATE_FILE)
         
-        fs_set_state_smm(json_str)
+        # Fire-and-forget background thread for firestore so it doesn't block main loop
+        Thread(target=fs_set_state_smm, args=(json_str,), daemon=True).start()
     except Exception as exc:
         add_log(f"State kaydetme hatasi: {exc}", "WARNING")
+
+# ── Watchdogs ───────────────────────────────────────────────────────────────
+async def presence_watchdog(client):
+    from telethon.tl.types import UserStatusOnline, UserStatusRecently
+    add_log("[SosyalPazarSMM] Presence Watchdog başlatıldı...")
+    while True:
+        try:
+            admin_user = await client.get_entity('Haacet')
+            is_online = False
+            if admin_user and admin_user.status:
+                is_online = isinstance(admin_user.status, (UserStatusOnline, UserStatusRecently))
+            
+            # Use same Firestore helper
+            payload = json.dumps({"fields": {"is_online": {"booleanValue": is_online}}}).encode('utf-8')
+            url = f"{FS_BASE_URL}/reklam/habil_presence?updateMask.fieldPaths=is_online&key={FS_API_KEY}"
+            req = urllib.request.Request(url, data=payload, method='PATCH')
+            req.add_header('Content-Type', 'application/json')
+            try:
+                with urllib.request.urlopen(req, timeout=10) as r: pass
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    url_create = f"{FS_BASE_URL}/reklam?documentId=habil_presence&key={FS_API_KEY}"
+                    req = urllib.request.Request(url_create, data=payload, method='POST')
+                    req.add_header('Content-Type', 'application/json')
+                    with urllib.request.urlopen(req, timeout=10) as r: pass
+        except Exception as e:
+            add_log(f"[Presence Watchdog] Habil durum kontrol hatası: {e}", "WARNING")
+        await asyncio.sleep(60)
+
+async def connection_watchdog(client):
+    while True:
+        try:
+            if not client.is_connected():
+                add_log("[SosyalPazarSMM] Bağlantı koptu, yeniden bağlanılıyor...", "WARNING")
+                await client.connect()
+        except Exception as exc:
+            add_log(f"[SosyalPazarSMM] Bağlantı watchdog hatası: {type(exc).__name__}", "WARNING")
+        await asyncio.sleep(30)
+
 
 
 async def run_publisher():
@@ -223,6 +275,10 @@ async def run_publisher():
     me = await client.get_me()
     add_log(f"[SosyalPazarSMM] Hesap baglandi: {me.first_name} (@{me.username}) ID:{me.id}")
     status.update(state="running", last_error=None)
+    
+    # Start watchdogs
+    asyncio.create_task(presence_watchdog(client))
+    asyncio.create_task(connection_watchdog(client))
 
     from telethon.tl.functions.channels import JoinChannelRequest
     from telethon.tl.functions.messages import ImportChatInviteRequest
