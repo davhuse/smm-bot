@@ -18,7 +18,9 @@ from telethon.errors import (
     ChannelPrivateError,
     ChatWriteForbiddenError,
     FloodWaitError,
+    InviteRequestSentError,
     RPCError,
+    UserAlreadyParticipantError,
     UserBannedInChannelError,
     UserNotParticipantError,
 )
@@ -150,10 +152,15 @@ async def join_group_safe(client, group):
         add_log(f"[SosyalPazarSMM] ➕ Grupa katilma deneniyor: @{group}")
         await client(JoinChannelRequest(group))
         add_log(f"[SosyalPazarSMM] ✅ Grupa katilindi: @{group}")
-        # Katıldıktan sonra en az 45-75 saniye insan taklidi beklemesi yap
         wait_after_join = random.randint(45, 75)
         add_log(f"[SosyalPazarSMM] 🛡️ Katilim sonrasi anti-spam beklemesi: {wait_after_join}sn @{group}")
         await asyncio.sleep(wait_after_join)
+        return True
+    except InviteRequestSentError:
+        add_log(f"[SosyalPazarSMM] 📩 Katilim istegi gonderildi (Admin onayi bekleniyor): @{group}")
+        return False
+    except UserAlreadyParticipantError:
+        add_log(f"[SosyalPazarSMM] ℹ️ Zaten grupta var: @{group}")
         return True
     except FloodWaitError as exc:
         add_log(f"[SosyalPazarSMM] ⚠️ Katilma bekleme suresi: {exc.seconds}s @{group}", "WARNING")
@@ -228,7 +235,6 @@ async def run_publisher():
                 status["sent"] += 1
                 add_log(f"[SosyalPazarSMM] ✅ Mesaj Gonderildi -> @{group}")
                 
-                # Gruplar arasi güvenli rastgele bekleme (40-90 saniye)
                 group_delay = random.randint(40, 90)
                 add_log(f"[SosyalPazarSMM] 🛡️ Gruplar arasi bekleme: {group_delay}sn")
                 await asyncio.sleep(group_delay)
