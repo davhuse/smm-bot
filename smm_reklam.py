@@ -1,5 +1,8 @@
 """Render'da calisan, SMM hesabi (@SosyalPazarSMM) icin bagimsiz Telegram reklam yayincisi."""
 
+import os, sys
+SKIP_IMPORT_CHECK = True  # allow flask template folder override
+
 import asyncio
 import json
 import logging
@@ -9,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from threading import Thread
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError, RPCError
 from telethon.sessions import StringSession
@@ -19,7 +22,10 @@ log = logging.getLogger("smm-reklam")
 
 STATE_FILE = Path("smm_delivery_state.json")
 MIN_INTERVAL_SECONDS = 60 * 60  # 1 saat minimum
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates')
+
+# shared delivery state for dashboard
+_delivery_state_cache: dict = {}
 status = {"state": "starting", "last_cycle": None, "last_error": None, "sent": 0}
 
 # ── Varsayılan ayarlar (Render ortam değişkenleri bunları ezer) ──────────────
@@ -107,6 +113,7 @@ async def run_publisher():
             try:
                 await client.send_message(await client.get_entity(group), message, link_preview=False)
                 delivery_state[group] = time.time()
+                _delivery_state_cache.update(delivery_state)
                 save_state(delivery_state)
                 status["sent"] += 1
                 log.info("Gonderildi -> @%s", group)
@@ -134,9 +141,21 @@ def background_runner():
 
 
 @app.get("/")
+def dashboard():
+    try:
+        return render_template("index.html")
+    except Exception:
+        return jsonify(status)
+
+
 @app.get("/health")
 def health():
     return jsonify(status)
+
+
+@app.get("/delivery_state")
+def delivery_state_endpoint():
+    return jsonify(_delivery_state_cache)
 
 
 if __name__ == "__main__":
