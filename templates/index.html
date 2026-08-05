@@ -166,11 +166,18 @@
         .terminal::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
         .terminal-line { margin-bottom: 2px; }
         .log-time { color: rgba(255,255,255,0.35); margin-right: 8px; }
-        .log-tag { color: #a78bfa; font-weight: 600; margin-right: 6px; }
         .log-ok { color: #4ade80; }
         .log-warn { color: #fbbf24; }
         .log-err { color: #f87171; }
         .log-info { color: #94a3b8; }
+
+        /* Countdown badges */
+        .countdown-live {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-family: 'Inconsolata', monospace; font-size: 0.88rem; font-weight: 600;
+            color: #60a5fa; background: rgba(96, 165, 250, 0.1);
+            padding: 4px 10px; border-radius: 99px; border: 1px solid rgba(96, 165, 250, 0.25);
+        }
 
         /* Tables & Forms */
         .table-container { max-height: 480px; overflow-y: auto; }
@@ -256,7 +263,7 @@
                 </div>
             </div>
 
-            <!-- CANLI REKLAM GÜNLÜKLERİ (FULL WIDTH TERMINAL) -->
+            <!-- CANLI REKLAM GÜNLÜKLERİ -->
             <div class="logs-section glass-panel">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h2><i class="fa-solid fa-terminal" style="color: #4ade80;"></i> Canlı Reklam Günlükleri</h2>
@@ -274,8 +281,8 @@
         <div id="tab-gruplar" class="tab-content">
             <div class="glass-panel">
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
-                    <h2><i class="fa-solid fa-users"></i> Hedef Telegram Grupları</h2>
-                    <span style="color: var(--text-secondary); font-size:0.9rem;">Toplam 30 grup tanımlı</span>
+                    <h2><i class="fa-solid fa-users"></i> Hedef Telegram Grupları ve Canlı Bekleme Süreleri</h2>
+                    <span style="color: var(--text-secondary); font-size:0.9rem;">1 Saatlik Cooldown Kontrolü</span>
                 </div>
                 <div class="table-container">
                     <table>
@@ -283,6 +290,8 @@
                             <tr>
                                 <th>#</th>
                                 <th>Grup Kullanıcı Adı</th>
+                                <th>Son Gönderim</th>
+                                <th>Canlı Kalan Süre</th>
                                 <th>Durum</th>
                             </tr>
                         </thead>
@@ -319,6 +328,9 @@
             "kuponindirimpazari","zeroticaret","indirim363","ticaretgruptr"
         ];
 
+        let deliveryState = {};
+        const INTERVAL_SECONDS = 3600;
+
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
@@ -332,15 +344,52 @@
             if (tabId === 'mesaj') document.getElementById('tabBtnMesaj').classList.add('active');
         }
 
+        async function fetchDeliveryState() {
+            try {
+                const res = await fetch('/api/delivery_state');
+                deliveryState = await res.json();
+                if (document.getElementById('tab-gruplar').classList.contains('active')) {
+                    renderGroupsTable();
+                }
+            } catch(e) {}
+        }
+
         function renderGroupsTable() {
             const tbody = document.getElementById('groupsTableBody');
+            const now = Date.now() / 1000;
             tbody.innerHTML = '';
+
             GROUPS.forEach((g, i) => {
+                const lastTime = deliveryState[g] || 0;
+                const elapsed = now - lastTime;
+                const remaining = Math.max(0, INTERVAL_SECONDS - elapsed);
+                
+                let timeStr = '—';
+                let cdHtml = '<span style="color:var(--text-secondary);">Bekliyor / Sırada</span>';
+                let statusBadge = '<span style="color:#fbbf24; font-size:0.8rem; padding:3px 8px; border-radius:99px; background:rgba(245,158,11,0.1);">Sırada</span>';
+
+                if (lastTime > 0) {
+                    const d = new Date(lastTime * 1000);
+                    timeStr = d.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+                    
+                    if (remaining > 0) {
+                        const mins = Math.floor(remaining / 60);
+                        const secs = Math.floor(remaining % 60);
+                        cdHtml = `<span class="countdown-live"><i class="fa-solid fa-stopwatch"></i> ${mins}dk ${secs}sn</span>`;
+                        statusBadge = '<span style="color:#60a5fa; font-size:0.8rem; padding:3px 8px; border-radius:99px; background:rgba(96,165,250,0.1);">Cooldown</span>';
+                    } else {
+                        cdHtml = '<span style="color:#4ade80; font-weight:600;">✅ 1 Saat Doldu (Hazır)</span>';
+                        statusBadge = '<span style="color:#4ade80; font-size:0.8rem; padding:3px 8px; border-radius:99px; background:rgba(34,197,94,0.1);">Hazır</span>';
+                    }
+                }
+
                 tbody.innerHTML += `
                     <tr>
                         <td style="color:var(--text-secondary);">${i+1}</td>
-                        <td><code style="color:#a78bfa;">@${g}</code></td>
-                        <td><span style="color:#4ade80; font-size:0.8rem; padding:3px 8px; border-radius:99px; background:rgba(34,197,94,0.1);">Aktif</span></td>
+                        <td><code style="color:#a78bfa; font-weight:600;">@${g}</code></td>
+                        <td style="color:var(--text-secondary); font-size:0.85rem;">${timeStr}</td>
+                        <td>${cdHtml}</td>
+                        <td>${statusBadge}</td>
                     </tr>`;
             });
         }
@@ -377,7 +426,7 @@
                     data.logs.forEach(line => {
                         let cls = 'log-info';
                         if (line.includes('✅') || line.includes('Gonderildi')) cls = 'log-ok';
-                        if (line.includes('⚠️') || line.includes('WARNING') || line.includes('Kalan:')) cls = 'log-warn';
+                        if (line.includes('⚠️') || line.includes('WARNING') || line.includes('Kalan:') || line.includes('bekleme')) cls = 'log-warn';
                         if (line.includes('❌') || line.includes('HATA') || line.includes('ERROR')) cls = 'log-err';
                         
                         html += `<div class="terminal-line ${cls}">${escapeHtml(line)}</div>`;
@@ -442,8 +491,17 @@
         updatePreview();
         updateStatus();
         updateLogs();
+        fetchDeliveryState();
+
+        // Dynamic intervals
         setInterval(updateStatus, 3000);
         setInterval(updateLogs, 2500);
+        setInterval(fetchDeliveryState, 5000);
+        setInterval(() => {
+            if (document.getElementById('tab-gruplar').classList.contains('active')) {
+                renderGroupsTable();
+            }
+        }, 1000); // 1 saniyelik canlı geriye sayım sayacı
     </script>
 </body>
 </html>
