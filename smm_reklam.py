@@ -325,7 +325,18 @@ async def run_publisher():
             status["progress"] = int(((idx + 1) / len(groups)) * 100)
 
             # Check if we are actually in the group before trying to send.
-            if group.lower() not in joined_usernames:
+            in_group = group.lower() in joined_usernames
+            if not in_group:
+                # Fallback: Sometimes iter_dialogs misses newly joined groups.
+                # Try getting entity, if it throws UserNotParticipant, then we are really not in it.
+                try:
+                    ent = await client.get_entity(group)
+                    # If we got here and didn't crash, we might be able to send. Let's try.
+                    in_group = True
+                except:
+                    pass
+            
+            if not in_group:
                 add_log(f"[SosyalPazarSMM] ⚠️ @{group} henüz üye değiliz, katılım listesine eklendi.")
                 not_joined_groups.append(group)
                 continue
