@@ -134,7 +134,51 @@ def groups_from_env():
     return list(dict.fromkeys(item.strip().lstrip("@") for item in raw.split(",") if item.strip()))
 
 
+import urllib.request
+import urllib.error
+
+FS_API_KEY = "AIzaSyCZz54GBF4nCgP84DsTSwwMyPq70Lb_Mjo"
+FS_PROJECT_ID = "bot-2-63772"
+FS_BASE_URL = f"https://firestore.googleapis.com/v1/projects/{FS_PROJECT_ID}/databases/(default)/documents"
+
+def fs_get_state_smm():
+    try:
+        url = f"{FS_BASE_URL}/reklam/smm_state?key={FS_API_KEY}"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as response:
+            if response.status == 200:
+                data = json.loads(response.read().decode('utf-8'))
+                fields = data.get("fields", {})
+                return fields.get("delivery_state", {}).get("stringValue", "{}")
+    except Exception as e:
+        add_log(f"Firestore get error: {e}", "WARNING")
+    return "{}"
+
+def fs_set_state_smm(delivery_state_json_str):
+    try:
+        url = f"{FS_BASE_URL}/reklam/smm_state?updateMask.fieldPaths=delivery_state&key={FS_API_KEY}"
+        payload = json.dumps({"fields": {"delivery_state": {"stringValue": delivery_state_json_str}}}).encode('utf-8')
+        req = urllib.request.Request(url, data=payload, method='PATCH')
+        req.add_header('Content-Type', 'application/json')
+        with urllib.request.urlopen(req, timeout=10) as response:
+            pass
+    except Exception as e:
+        add_log(f"Firestore set error: {e}", "WARNING")
+
+
 def load_state():
+    try:
+        state_str = fs_get_state_smm()
+        if state_str and state_str != "{}":
+            state_data = json.loads(state_str)
+            try:
+                STATE_FILE.write_text(json.dumps(state_data, ensure_ascii=False, indent=2), encoding="utf-8")
+            except:
+                pass
+            return state_data
+    except Exception:
+        pass
+
     try:
         return json.loads(STATE_FILE.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -143,9 +187,12 @@ def load_state():
 
 def save_state(value):
     try:
+        json_str = json.dumps(value, ensure_ascii=False, indent=2)
         tmp = STATE_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.write_text(json_str, encoding="utf-8")
         tmp.replace(STATE_FILE)
+        
+        fs_set_state_smm(json_str)
     except Exception as exc:
         add_log(f"State kaydetme hatasi: {exc}", "WARNING")
 
@@ -191,6 +238,17 @@ async def run_publisher():
         _delivery_state_cache.update(delivery_state)
         now = time.time()
         
+        # 0. GET JOINED GROUPS
+        joined_usernames = set()
+        try:
+            async for dialog in client.iter_dialogs():
+                if dialog.is_channel or dialog.is_group:
+                    if getattr(dialog.entity, 'username', None):
+                        joined_usernames.add(dialog.entity.username.lower())
+                    joined_usernames.add(str(dialog.id))
+        except Exception as e:
+            add_log(f"[SosyalPazarSMM] Dialogs okuma hatasi: {e}", "WARNING")
+        
         # 1. SEND PHASE
         not_joined_groups = []
 
@@ -209,6 +267,12 @@ async def run_publisher():
 
             status["current_group"] = group
             status["progress"] = int(((idx + 1) / len(groups)) * 100)
+
+            # Check if we are actually in the group before trying to send.
+            if group.lower() not in joined_usernames:
+                add_log(f"[SosyalPazarSMM] ⚠️ @{group} henüz üye değiliz, katılım listesine eklendi.")
+                not_joined_groups.append(group)
+                continue
 
             try:
                 entity = await client.get_entity(group)
