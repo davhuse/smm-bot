@@ -49,7 +49,6 @@ _delivery_state_cache: dict = {}
 _log_buffer = collections.deque(maxlen=500)
 _bot_running = True
 _client_instance = None
-_loop_instance = None
 
 status = {
     "state": "starting",
@@ -175,6 +174,7 @@ async def join_group_safe(client, group):
         return True
     except FloodWaitError as exc:
         add_log(f"[SosyalPazarSMM] ⚠️ Katilma bekleme suresi: {exc.seconds}s @{group}", "WARNING")
+        await asyncio.sleep(exc.seconds + 2)
         return False
     except Exception as exc:
         add_log(f"[SosyalPazarSMM] ❌ Grupa katilma basarisiz @{group}: {type(exc).__name__}", "WARNING")
@@ -183,8 +183,7 @@ async def join_group_safe(client, group):
 
 # ── Publisher loop ──────────────────────────────────────────────────────────
 async def run_publisher():
-    global _bot_running, _client_instance, _loop_instance
-    _loop_instance = asyncio.get_running_loop()
+    global _bot_running, _client_instance
 
     api_id = os.environ.get("TELEGRAM_API_ID", DEFAULT_API_ID).strip()
     api_hash = os.environ.get("TELEGRAM_API_HASH", DEFAULT_API_HASH).strip()
@@ -209,12 +208,6 @@ async def run_publisher():
     me = await client.get_me()
     add_log(f"[SosyalPazarSMM] Hesap baglandi: {me.first_name} (@{me.username}) ID:{me.id}")
     status.update(state="running", last_error=None)
-
-    # Otomatik gruplara katılma turu
-    add_log("[SosyalPazarSMM] 🚀 Otomatik gruplara katilma turu baslatildi...")
-    for g in groups:
-        await join_group_safe(client, g)
-        await asyncio.sleep(3)
 
     while True:
         if not _bot_running:
@@ -352,12 +345,6 @@ def api_stop():
     status["state"] = "stopped"
     add_log("[SosyalPazarSMM] Bot DURDURULDU (panel uzerinden)")
     return jsonify({"ok": True, "state": "stopped"})
-
-
-@app.route("/api/bot/join", methods=["POST"])
-def api_join():
-    add_log("[SosyalPazarSMM] Manuel gruplara katilma istegi alindi")
-    return jsonify({"ok": True, "message": "Katilma baslatildi"})
 
 
 if __name__ == "__main__":
