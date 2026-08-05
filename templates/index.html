@@ -3,764 +3,466 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SosyalPazar SMM Panel</title>
+    <title>SosyalPazar SMM Control Center</title>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inconsolata:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
-            --bg: #080b14;
-            --surface: rgba(255,255,255,0.04);
-            --border: rgba(255,255,255,0.08);
-            --accent: #7c3aed;
-            --accent2: #06b6d4;
+            --bg-dark: #090d16;
+            --panel-bg: rgba(255, 255, 255, 0.035);
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --accent: #8b5cf6;
+            --accent-glow: rgba(139, 92, 246, 0.4);
             --success: #22c55e;
             --danger: #ef4444;
-            --warn: #f59e0b;
-            --text: #f1f5f9;
-            --muted: rgba(241,245,249,0.5);
+            --warning: #f59e0b;
+            --text-primary: #f8fafc;
+            --text-secondary: rgba(248, 250, 252, 0.6);
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: 'Outfit', sans-serif;
-            background: var(--bg);
-            color: var(--text);
+            background: var(--bg-dark);
+            color: var(--text-primary);
             min-height: 100vh;
-            overflow-x: hidden;
+            padding: 24px 20px;
         }
 
-        /* ── AURORA ─────────────────────────────── */
-        .aurora {
+        /* Aurora background */
+        .background-aurora {
             position: fixed; inset: 0; pointer-events: none; z-index: 0;
-            overflow: hidden;
+            background: 
+                radial-gradient(circle at 15% 15%, rgba(139, 92, 246, 0.15) 0%, transparent 45%),
+                radial-gradient(circle at 85% 85%, rgba(6, 182, 212, 0.12) 0%, transparent 45%);
         }
-        .aurora::before {
-            content: '';
-            position: absolute;
-            width: 800px; height: 800px;
-            top: -200px; left: -200px;
-            background: radial-gradient(circle, rgba(124,58,237,0.18) 0%, transparent 70%);
-            animation: drift1 18s ease-in-out infinite alternate;
-        }
-        .aurora::after {
-            content: '';
-            position: absolute;
-            width: 700px; height: 700px;
-            bottom: -200px; right: -100px;
-            background: radial-gradient(circle, rgba(6,182,212,0.14) 0%, transparent 70%);
-            animation: drift2 22s ease-in-out infinite alternate;
-        }
-        @keyframes drift1 { from { transform: translate(0,0) scale(1); } to { transform: translate(80px,60px) scale(1.15); } }
-        @keyframes drift2 { from { transform: translate(0,0) scale(1); } to { transform: translate(-70px,-50px) scale(1.1); } }
 
-        /* ── LAYOUT ─────────────────────────────── */
-        .container {
+        .dashboard-container {
             position: relative; z-index: 1;
             max-width: 1280px; margin: 0 auto;
-            padding: 24px 20px;
             display: flex; flex-direction: column; gap: 20px;
         }
 
-        /* ── HEADER ─────────────────────────────── */
+        /* Header */
         header {
-            display: flex; align-items: center; justify-content: space-between;
-            gap: 20px; flex-wrap: wrap;
+            display: flex; flex-direction: column; gap: 16px;
         }
-        .brand { display: flex; align-items: center; gap: 12px; }
-        .brand-icon {
-            width: 46px; height: 46px;
-            background: linear-gradient(135deg, var(--accent), var(--accent2));
-            border-radius: 12px;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 1.3rem;
-            box-shadow: 0 0 20px rgba(124,58,237,0.4);
+        header h1 {
+            font-size: 1.6rem; font-weight: 700;
+            display: flex; align-items: center; gap: 12px;
+            letter-spacing: -0.5px;
         }
-        .brand h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.5px; }
-        .brand span { font-size: 0.8rem; color: var(--muted); display: block; margin-top: 1px; }
-        .live-pill {
-            display: flex; align-items: center; gap: 8px;
-            padding: 6px 14px;
-            background: rgba(34,197,94,0.1);
-            border: 1px solid rgba(34,197,94,0.3);
-            border-radius: 99px;
-            font-size: 0.82rem; color: var(--success);
-            font-weight: 600;
-        }
-        .live-dot {
-            width: 8px; height: 8px; border-radius: 50%;
-            background: var(--success);
-            animation: pulse 1.5s ease-in-out infinite;
-        }
-        @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.7); } }
+        header h1 i { color: var(--accent); }
 
-        /* ── GLASS PANEL ────────────────────────── */
-        .panel {
-            background: var(--surface);
-            border: 1px solid var(--border);
+        /* Tabs Header */
+        .tabs-header {
+            display: flex; gap: 10px; flex-wrap: wrap;
+        }
+        .tab-btn {
+            background: var(--panel-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 99px;
+            padding: 10px 22px;
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.9rem; font-weight: 500;
+            color: var(--text-secondary);
+            cursor: pointer; transition: all 0.25s;
+            display: flex; align-items: center; gap: 8px;
+        }
+        .tab-btn:hover { color: var(--text-primary); border-color: rgba(255,255,255,0.2); }
+        .tab-btn.active {
+            background: linear-gradient(135deg, var(--accent), #6d28d9);
+            border-color: transparent;
+            color: #fff;
+            box-shadow: 0 4px 15px var(--accent-glow);
+        }
+
+        .tab-content { display: none; flex-direction: column; gap: 20px; }
+        .tab-content.active { display: flex; }
+
+        /* Glass Panel */
+        .glass-panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--glass-border);
             border-radius: 16px;
             padding: 24px;
             backdrop-filter: blur(16px);
         }
-        .panel-title {
-            font-size: 1rem; font-weight: 600;
-            display: flex; align-items: center; gap: 10px;
-            margin-bottom: 18px;
-        }
-        .panel-title i { color: var(--accent); }
 
-        /* ── STAT CARDS ─────────────────────────── */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-            gap: 16px;
-        }
-        .stat {
-            background: rgba(255,255,255,0.03);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 18px;
-            display: flex; flex-direction: column; align-items: center;
-            gap: 6px; text-align: center;
-            transition: border-color 0.25s, transform 0.25s;
-        }
-        .stat:hover { border-color: rgba(124,58,237,0.4); transform: translateY(-2px); }
-        .stat-val {
-            font-size: 2rem; font-weight: 700; line-height: 1;
-        }
-        .stat-lbl { font-size: 0.78rem; color: var(--muted); font-weight: 500; }
-
-        /* ── TABS ───────────────────────────────── */
-        .tabs {
-            display: flex; gap: 8px; flex-wrap: wrap;
-        }
-        .tab-btn {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 99px;
-            padding: 8px 18px;
-            font-family: 'Outfit', sans-serif;
-            font-size: 0.85rem; font-weight: 500;
-            color: var(--muted);
-            cursor: pointer;
-            transition: all 0.2s;
-            display: flex; align-items: center; gap: 7px;
-        }
-        .tab-btn:hover { color: var(--text); border-color: rgba(255,255,255,0.18); }
-        .tab-btn.active {
-            background: linear-gradient(135deg, var(--accent), #9333ea);
-            border-color: transparent;
-            color: #fff;
-            box-shadow: 0 4px 15px rgba(124,58,237,0.4);
-        }
-        .tab-content { display: none; }
-        .tab-content.active { display: flex; flex-direction: column; gap: 20px; }
-
-        /* ── CONTROLS ───────────────────────────── */
-        .controls-row {
+        /* Controls Panel */
+        .controls-panel {
             display: flex; align-items: center; justify-content: space-between;
             flex-wrap: wrap; gap: 16px;
         }
-        .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .bot-info-header { display: flex; align-items: center; gap: 16px; }
+        .bot-info-header h2 { font-size: 1.15rem; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+
+        /* Status Badge */
+        .status-badge {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 6px 14px; border-radius: 99px;
+            font-size: 0.85rem; font-weight: 600;
+        }
+        .status-badge.running {
+            background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.3); color: var(--success);
+        }
+        .status-badge.stopped {
+            background: rgba(239,68,68,0.12); border: 1px solid rgba(239,68,68,0.3); color: var(--danger);
+        }
+        .status-badge .dot {
+            width: 8px; height: 8px; border-radius: 50%; background: currentColor;
+        }
+        .status-badge.running .dot { animation: pulse 1.5s ease-in-out infinite; }
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
+
+        /* Buttons */
+        .control-actions { display: flex; gap: 10px; flex-wrap: wrap; }
         .btn {
             display: inline-flex; align-items: center; gap: 8px;
-            padding: 10px 20px;
-            border: none; border-radius: 10px;
+            padding: 10px 22px; border: none; border-radius: 10px;
             font-family: 'Outfit', sans-serif; font-size: 0.9rem; font-weight: 600;
             cursor: pointer; transition: all 0.2s;
         }
-        .btn-primary {
-            background: linear-gradient(135deg, var(--accent), #9333ea);
-            color: #fff;
-            box-shadow: 0 4px 12px rgba(124,58,237,0.35);
+        .btn.primary {
+            background: linear-gradient(135deg, var(--accent), #6d28d9);
+            color: #fff; box-shadow: 0 4px 14px var(--accent-glow);
         }
-        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(124,58,237,0.5); }
-        .btn-danger { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.35); color: #fca5a5; }
-        .btn-danger:hover { background: rgba(239,68,68,0.25); }
-        .btn-secondary { background: rgba(255,255,255,0.06); border: 1px solid var(--border); color: var(--text); }
-        .btn-secondary:hover { background: rgba(255,255,255,0.1); }
-        .btn-cyan {
-            background: linear-gradient(135deg, var(--accent2), #0891b2);
-            color: #fff;
-            box-shadow: 0 4px 12px rgba(6,182,212,0.3);
+        .btn.primary:hover { transform: translateY(-1px); }
+        .btn.danger {
+            background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.35); color: #fca5a5;
         }
-        .btn-cyan:hover { transform: translateY(-1px); }
-        .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none !important; }
+        .btn.danger:hover { background: rgba(239,68,68,0.25); }
+        .btn.secondary {
+            background: rgba(255,255,255,0.06); border: 1px solid var(--glass-border); color: var(--text-primary);
+        }
+        .btn.secondary:hover { background: rgba(255,255,255,0.1); }
 
-        /* ── STATUS BADGE ───────────────────────── */
-        .status-badge {
-            display: inline-flex; align-items: center; gap: 8px;
-            padding: 6px 14px;
-            border-radius: 99px; font-size: 0.82rem; font-weight: 600;
+        /* Stats Bar */
+        .stats-bar {
+            display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px;
         }
-        .status-badge.running {
-            background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: var(--success);
+        .stat-card {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 20px; text-align: center;
         }
-        .status-badge.stopped {
-            background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5;
-        }
-        .status-badge.waiting {
-            background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: var(--warn);
-        }
-        .badge-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-        .badge-dot.animate { animation: pulse 1.5s ease-in-out infinite; }
+        .stat-title { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 6px; font-weight: 500; }
+        .stat-value { font-size: 1.8rem; font-weight: 700; }
 
-        /* ── TERMINAL ───────────────────────────── */
+        /* Terminal Logs */
+        .logs-section h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 10px; }
         .terminal {
-            background: rgba(0,0,0,0.5);
-            border: 1px solid rgba(255,255,255,0.07);
+            background: #030712;
+            border: 1px solid rgba(255,255,255,0.08);
             border-radius: 12px;
-            padding: 16px;
-            height: 380px; overflow-y: auto;
-            font-family: 'Inconsolata', 'Consolas', monospace;
-            font-size: 0.82rem; line-height: 1.7;
+            padding: 18px;
+            height: 520px; width: 100%;
+            overflow-y: auto;
+            font-family: 'Inconsolata', monospace;
+            font-size: 0.88rem; line-height: 1.7;
+            color: #e2e8f0;
         }
-        .terminal::-webkit-scrollbar { width: 4px; }
+        .terminal::-webkit-scrollbar { width: 5px; }
         .terminal::-webkit-scrollbar-track { background: transparent; }
         .terminal::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 4px; }
+        .terminal-line { margin-bottom: 2px; }
+        .log-time { color: rgba(255,255,255,0.35); margin-right: 8px; }
+        .log-tag { color: #a78bfa; font-weight: 600; margin-right: 6px; }
         .log-ok { color: #4ade80; }
-        .log-err { color: #f87171; }
         .log-warn { color: #fbbf24; }
-        .log-info { color: #60a5fa; }
-        .log-time { color: rgba(255,255,255,0.3); margin-right: 8px; }
+        .log-err { color: #f87171; }
+        .log-info { color: #94a3b8; }
 
-        /* ── PROGRESS BAR ───────────────────────── */
-        .progress-wrap {
-            background: rgba(255,255,255,0.06);
-            border-radius: 99px; height: 6px; overflow: hidden;
-            margin-top: 10px;
-        }
-        .progress-bar {
-            height: 100%;
-            background: linear-gradient(90deg, var(--accent), var(--accent2));
-            border-radius: 99px;
-            transition: width 0.6s ease;
-            width: 0%;
-        }
+        /* Tables & Forms */
+        .table-container { max-height: 480px; overflow-y: auto; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th { padding: 12px 14px; font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--glass-border); }
+        td { padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.04); font-size: 0.9rem; }
+        tr:hover td { background: rgba(255,255,255,0.02); }
 
-        /* ── FORM ───────────────────────────────── */
-        .form-group { display: flex; flex-direction: column; gap: 7px; margin-bottom: 16px; }
-        label { font-size: 0.82rem; color: var(--muted); font-weight: 500; }
-        input, textarea, select {
-            background: rgba(0,0,0,0.3);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 10px 14px;
-            color: var(--text);
-            font-family: 'Outfit', sans-serif; font-size: 0.9rem;
+        textarea, input {
+            width: 100%; background: rgba(0,0,0,0.3);
+            border: 1px solid var(--glass-border);
+            border-radius: 10px; padding: 12px 16px;
+            color: #fff; font-family: 'Outfit', sans-serif; font-size: 0.9rem;
             outline: none; transition: border-color 0.2s;
-            width: 100%;
         }
-        input:focus, textarea:focus, select:focus { border-color: rgba(124,58,237,0.6); }
-        textarea { resize: vertical; min-height: 120px; }
+        textarea:focus, input:focus { border-color: var(--accent); }
+        textarea { resize: vertical; min-height: 280px; line-height: 1.6; }
 
-        /* ── GROUPS TABLE ───────────────────────── */
-        .table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
-        table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
-        thead th { padding: 12px 16px; text-align: left; font-weight: 600; color: var(--muted); border-bottom: 1px solid var(--border); }
-        tbody td { padding: 11px 16px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
-        tbody tr:last-child td { border-bottom: none; }
-        tbody tr:hover { background: rgba(255,255,255,0.03); }
-        .badge-ok { display:inline-flex; align-items:center; gap:5px; font-size:0.75rem; padding:3px 9px; border-radius:99px; background:rgba(34,197,94,0.12); color:#4ade80; border:1px solid rgba(34,197,94,0.25); }
-        .badge-err { display:inline-flex; align-items:center; gap:5px; font-size:0.75rem; padding:3px 9px; border-radius:99px; background:rgba(239,68,68,0.12); color:#f87171; border:1px solid rgba(239,68,68,0.25); }
-        .badge-pending { display:inline-flex; align-items:center; gap:5px; font-size:0.75rem; padding:3px 9px; border-radius:99px; background:rgba(245,158,11,0.12); color:#fbbf24; border:1px solid rgba(245,158,11,0.25); }
-
-        /* ── MESSAGE EDITOR ─────────────────────── */
-        .msg-preview {
-            background: rgba(0,0,0,0.35);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 16px;
-            font-size: 0.88rem; line-height: 1.7;
-            white-space: pre-wrap;
-            min-height: 100px;
-            color: var(--text);
-        }
-
-        /* ── GRID ───────────────────────────────── */
         .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
-
-        /* ── TOAST ──────────────────────────────── */
-        #toast {
-            position: fixed; bottom: 28px; right: 28px;
-            padding: 12px 22px;
-            border-radius: 12px;
-            font-size: 0.88rem; font-weight: 600;
-            z-index: 9999;
-            display: none;
-            backdrop-filter: blur(12px);
-            animation: slideIn 0.3s ease;
-        }
-        @keyframes slideIn { from { transform: translateY(20px); opacity:0; } to { transform: translateY(0); opacity:1; } }
-        .toast-ok { background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.4); color: #4ade80; }
-        .toast-err { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); color: #f87171; }
     </style>
 </head>
 <body>
-<div class="aurora"></div>
-<div id="toast"></div>
+    <div class="background-aurora"></div>
 
-<div class="container">
-
-    <!-- HEADER -->
-    <header>
-        <div class="brand">
-            <div class="brand-icon"><i class="fa-solid fa-chart-bar"></i></div>
-            <div>
-                <h1>SosyalPazar <span style="color:var(--accent);">SMM Panel</span></h1>
-                <span>@SosyalPazarSMM • Telegram Reklam Yayıncısı</span>
+    <div class="dashboard-container">
+        <!-- HEADER -->
+        <header>
+            <h1><i class="fa-solid fa-robot"></i> SosyalPazar SMM Control Center</h1>
+            <div class="tabs-header">
+                <button class="tab-btn active" id="tabBtnReklam" onclick="switchTab('reklam')">
+                    <i class="fa-solid fa-bullhorn"></i> Reklam Botu
+                </button>
+                <button class="tab-btn" id="tabBtnGruplar" onclick="switchTab('gruplar')">
+                    <i class="fa-solid fa-users"></i> Hedef Gruplar (30)
+                </button>
+                <button class="tab-btn" id="tabBtnMesaj" onclick="switchTab('mesaj')">
+                    <i class="fa-solid fa-pen-to-square"></i> Reklam Mesajı
+                </button>
             </div>
-        </div>
-        <div class="live-pill">
-            <div class="live-dot"></div>
-            <span id="headerStatus">Bağlanıyor...</span>
-        </div>
-    </header>
+        </header>
 
-    <!-- STAT CARDS -->
-    <div class="stats-grid">
-        <div class="stat">
-            <div class="stat-val" id="statSent" style="color:#a78bfa;">0</div>
-            <div class="stat-lbl"><i class="fa-solid fa-paper-plane" style="color:#a78bfa;"></i> Gönderilen Mesaj</div>
-        </div>
-        <div class="stat">
-            <div class="stat-val" id="statGroups" style="color:var(--accent2);">30</div>
-            <div class="stat-lbl"><i class="fa-solid fa-users" style="color:var(--accent2);"></i> Hedef Grup</div>
-        </div>
-        <div class="stat">
-            <div class="stat-val" id="statState" style="color:var(--success);">—</div>
-            <div class="stat-lbl"><i class="fa-solid fa-circle-dot" style="color:var(--success);"></i> Bot Durumu</div>
-        </div>
-        <div class="stat">
-            <div class="stat-val" id="statLastCycle" style="color:#60a5fa;">—</div>
-            <div class="stat-lbl"><i class="fa-solid fa-rotate" style="color:#60a5fa;"></i> Son Döngü</div>
-        </div>
-        <div class="stat">
-            <div class="stat-val" id="statInterval" style="color:var(--warn);">60 dk</div>
-            <div class="stat-lbl"><i class="fa-solid fa-clock" style="color:var(--warn);"></i> Gönderim Aralığı</div>
-        </div>
-    </div>
-
-    <!-- TABS -->
-    <div class="tabs">
-        <button class="tab-btn active" id="tbOverview" onclick="showTab('overview')">
-            <i class="fa-solid fa-gauge-high"></i> Genel Bakış
-        </button>
-        <button class="tab-btn" id="tbGroups" onclick="showTab('groups')">
-            <i class="fa-solid fa-users"></i> Hedef Gruplar
-        </button>
-        <button class="tab-btn" id="tbMessage" onclick="showTab('message')">
-            <i class="fa-solid fa-pen-to-square"></i> Reklam Mesajı
-        </button>
-        <button class="tab-btn" id="tbLogs" onclick="showTab('logs')">
-            <i class="fa-solid fa-terminal"></i> Canlı Günlükler
-        </button>
-    </div>
-
-    <!-- TAB: GENEL BAKIŞ -->
-    <div class="tab-content active" id="tab-overview">
-        <div class="panel">
-            <div class="controls-row">
-                <div>
-                    <div class="panel-title"><i class="fa-solid fa-robot"></i> Bot Kontrolü</div>
-                    <div class="status-badge stopped" id="statusBadge">
-                        <div class="badge-dot"></div>
-                        <span id="statusText">Kontrol ediliyor...</span>
+        <!-- TAB 1: REKLAM BOTU -->
+        <div id="tab-reklam" class="tab-content active">
+            <div class="controls-panel glass-panel">
+                <div class="bot-info-header">
+                    <h2><i class="fa-solid fa-circle-play"></i> SMM Reklam Gönderim Kontrolü (@SosyalPazarSMM)</h2>
+                    <div class="status-badge stopped" id="botStatus">
+                        <span class="dot"></span>
+                        <span class="text" id="botStatusText">Kontrol Ediliyor...</span>
                     </div>
                 </div>
-                <div class="btn-row">
-                    <button class="btn btn-cyan" onclick="joinGroups()">
+                <div class="control-actions">
+                    <button id="btnStart" class="btn primary" onclick="startBot()">
+                        <i class="fa-solid fa-play"></i> Başlat
+                    </button>
+                    <button id="btnStop" class="btn danger" onclick="stopBot()">
+                        <i class="fa-solid fa-stop"></i> Durdur
+                    </button>
+                    <button class="btn secondary" onclick="joinGroups()">
                         <i class="fa-solid fa-user-plus"></i> Gruplara Katıl
                     </button>
-                    <button class="btn btn-primary" onclick="forceBlast()">
-                        <i class="fa-solid fa-bolt"></i> Şimdi Gönder
+                </div>
+            </div>
+
+            <!-- STATS BAR -->
+            <div class="stats-bar">
+                <div class="stat-card glass-panel">
+                    <span class="stat-title">Aktif Reklam Grubu</span>
+                    <span class="stat-value" style="color: var(--accent);" id="statTotalGroups">30</span>
+                </div>
+                <div class="stat-card glass-panel">
+                    <span class="stat-title">Gönderilen Mesaj</span>
+                    <span class="stat-value" style="color: var(--success);" id="statSentMessages">0</span>
+                </div>
+                <div class="stat-card glass-panel">
+                    <span class="stat-title">Mevcut Döngü İlerlemesi</span>
+                    <span class="stat-value" style="color: #60a5fa;" id="statProgress">0%</span>
+                </div>
+                <div class="stat-card glass-panel">
+                    <span class="stat-title">Bot Hesabı</span>
+                    <span class="stat-value" style="font-size: 1.1rem; color: #a78bfa;">@SosyalPazarSMM</span>
+                </div>
+            </div>
+
+            <!-- CANLI REKLAM GÜNLÜKLERİ (FULL WIDTH TERMINAL) -->
+            <div class="logs-section glass-panel">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h2><i class="fa-solid fa-terminal" style="color: #4ade80;"></i> Canlı Reklam Günlükleri</h2>
+                    <button class="btn secondary" onclick="document.getElementById('terminalOutput').innerHTML='';" style="padding: 6px 14px; font-size: 0.85rem;">
+                        <i class="fa-solid fa-trash-can"></i> Temizle
                     </button>
-                    <button class="btn btn-secondary" onclick="fetchStatus()">
-                        <i class="fa-solid fa-rotate"></i> Yenile
-                    </button>
                 </div>
-            </div>
-
-            <div id="lastError" style="display:none; margin-top:16px; padding:12px 16px; border-radius:10px; background:rgba(239,68,68,0.1); border:1px solid rgba(239,68,68,0.25); font-size:0.85rem; color:#fca5a5;">
-                <i class="fa-solid fa-triangle-exclamation"></i> <strong>Son Hata:</strong> <span id="lastErrorText"></span>
+                <div class="terminal" id="terminalOutput">
+                    <div class="terminal-line log-info">[SosyalPazarSMM] Dashboard baslatildi, canlı gunlukler yukleniyor...</div>
+                </div>
             </div>
         </div>
 
-        <div class="panel">
-            <div class="panel-title"><i class="fa-solid fa-chart-line"></i> Gönderim İlerlemesi</div>
-            <div style="display:flex; justify-content:space-between; font-size:0.85rem; color:var(--muted); margin-bottom:8px;">
-                <span>Bu döngüde gönderilen</span>
-                <span id="progressText">0 / 30 grup</span>
-            </div>
-            <div class="progress-wrap">
-                <div class="progress-bar" id="progressBar"></div>
+        <!-- TAB 2: HEDEF GRUPLAR -->
+        <div id="tab-gruplar" class="tab-content">
+            <div class="glass-panel">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                    <h2><i class="fa-solid fa-users"></i> Hedef Telegram Grupları</h2>
+                    <span style="color: var(--text-secondary); font-size:0.9rem;">Toplam 30 grup tanımlı</span>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Grup Kullanıcı Adı</th>
+                                <th>Durum</th>
+                            </tr>
+                        </thead>
+                        <tbody id="groupsTableBody">
+                            <!-- JS ile doldurulacak -->
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
-        <div class="grid-2">
-            <div class="panel">
-                <div class="panel-title"><i class="fa-solid fa-user-circle"></i> Hesap Bilgisi</div>
-                <div style="display:flex; flex-direction:column; gap:12px; font-size:0.88rem;">
-                    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Kullanıcı Adı</span><strong>@SosyalPazarSMM</strong></div>
-                    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Telefon</span><strong>+12237587384</strong></div>
-                    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Platform</span><strong>Render (Free)</strong></div>
-                    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">Repo</span><a href="https://github.com/davhuse/smm-bot" target="_blank" style="color:var(--accent2);">davhuse/smm-bot</a></div>
-                    <div style="display:flex;justify-content:space-between;"><span style="color:var(--muted);">URL</span><a href="https://smm-bot-1-w7pv.onrender.com" target="_blank" style="color:var(--accent2);">smm-bot-1-w7pv.onrender.com</a></div>
+        <!-- TAB 3: REKLAM MESAJI -->
+        <div id="tab-mesaj" class="tab-content">
+            <div class="grid-2">
+                <div class="glass-panel">
+                    <h2 style="font-size:1.1rem; margin-bottom:15px;"><i class="fa-solid fa-pen-to-square"></i> SMM Reklam Mesajı Metni</h2>
+                    <textarea id="msgInput" spellcheck="false"></textarea>
                 </div>
-            </div>
-            <div class="panel">
-                <div class="panel-title"><i class="fa-solid fa-sliders"></i> Hızlı Ayarlar</div>
-                <div class="form-group">
-                    <label>Gönderim Aralığı (Dakika)</label>
-                    <input type="number" id="intervalInput" value="60" min="15" max="1440">
+                <div class="glass-panel">
+                    <h2 style="font-size:1.1rem; margin-bottom:15px;"><i class="fa-solid fa-eye"></i> Canlı Mesaj Önizleme</h2>
+                    <div id="msgPreview" style="white-space: pre-wrap; font-size:0.9rem; line-height:1.7; background:rgba(0,0,0,0.4); padding:16px; border-radius:10px; border:1px solid var(--glass-border); min-height:280px;"></div>
                 </div>
-                <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="saveInterval()">
-                    <i class="fa-solid fa-floppy-disk"></i> Aralığı Kaydet
-                </button>
             </div>
         </div>
     </div>
 
-    <!-- TAB: HEDEF GRUPLAR -->
-    <div class="tab-content" id="tab-groups">
-        <div class="panel">
-            <div class="controls-row">
-                <div class="panel-title" style="margin-bottom:0;"><i class="fa-solid fa-users"></i> Hedef Gruplar <span style="color:var(--muted); font-size:0.82rem; font-weight:400; margin-left:6px;" id="groupCount">(30 grup)</span></div>
-                <div class="btn-row">
-                    <input type="text" id="newGroupInput" placeholder="Grup kullanıcı adı (örn: smm_panel)" style="width:220px;">
-                    <button class="btn btn-primary" onclick="addGroup()"><i class="fa-solid fa-plus"></i> Ekle</button>
-                </div>
-            </div>
-        </div>
-        <div class="panel" style="padding:0; overflow:hidden;">
-            <div class="table-wrap" style="border:none; border-radius:16px;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>Grup Kullanıcı Adı</th>
-                            <th>Son Gönderim</th>
-                            <th>Durum</th>
-                            <th style="text-align:right;">İşlem</th>
-                        </tr>
-                    </thead>
-                    <tbody id="groupsTable">
-                        <tr><td colspan="5" style="text-align:center;padding:30px;color:var(--muted);">Yükleniyor...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    </div>
+    <script>
+        const GROUPS = [
+            "kuponindirimsatis","satcek","kuponsat","ceksat","ticaretcanavari","alsatticarettz",
+            "letgoilanlari","kuponhesapsatis","kuponsatisgrup","kuponcekkodsatis","indirimkodusatis",
+            "alimsatimmerkezii","ticaretforumofficial","kuponsatislari0","yucekuponsatis","kupongrupta",
+            "kuponkodindirimilanlar","Kuponcekm","kodceksatismerkezi","ticaretyapn","kuponkodhesapilan",
+            "kodkuponmarketi","xalimsatiim","satiskodtakasi","kuponkodalimsatimm","ceksatkupon",
+            "kuponindirimpazari","zeroticaret","indirim363","ticaretgruptr"
+        ];
 
-    <!-- TAB: REKLAM MESAJI -->
-    <div class="tab-content" id="tab-message">
-        <div class="grid-2">
-            <div class="panel">
-                <div class="panel-title"><i class="fa-solid fa-pen-to-square"></i> Mesaj Düzenleyici</div>
-                <div class="form-group">
-                    <label>Reklam Mesajı (Markdown destekli)</label>
-                    <textarea id="msgEditor" rows="12" oninput="updatePreview()" placeholder="Reklam mesajınızı buraya yazın..."></textarea>
-                </div>
-                <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="saveMessage()">
-                    <i class="fa-solid fa-floppy-disk"></i> Mesajı Kaydet & Deploy Et
-                </button>
-            </div>
-            <div class="panel">
-                <div class="panel-title"><i class="fa-solid fa-eye"></i> Önizleme</div>
-                <div class="msg-preview" id="msgPreview">Mesajınız burada görünecek...</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- TAB: CANLI GÜNLÜKLER -->
-    <div class="tab-content" id="tab-logs">
-        <div class="panel">
-            <div class="controls-row" style="margin-bottom:16px;">
-                <div class="panel-title" style="margin-bottom:0;"><i class="fa-solid fa-terminal"></i> Canlı Günlükler</div>
-                <div class="btn-row">
-                    <button class="btn btn-secondary" onclick="fetchLogs()"><i class="fa-solid fa-rotate"></i> Yenile</button>
-                    <button class="btn btn-danger" onclick="clearLogs()"><i class="fa-solid fa-trash-can"></i> Temizle</button>
-                </div>
-            </div>
-            <div class="terminal" id="logsTerminal">
-                <span class="log-info log-time">[sistem]</span><span class="log-info">Dashboard başlatıldı, günlükler yükleniyor...</span>
-            </div>
-        </div>
-    </div>
-
-</div>
-
-<script>
-const API = 'https://smm-bot-1-w7pv.onrender.com';
-
-const GROUPS = [
-  'kuponindirimsatis','satcek','kuponsat','ceksat','ticaretcanavari',
-  'alsatticarettz','letgoilanlari','kuponhesapsatis','kuponsatisgrup',
-  'kuponcekkodsatis','indirimkodusatis','alimsatimmerkezii',
-  'ticaretforumofficial','kuponsatislari0','yucekuponsatis',
-  'kupongrupta','kuponkodindirimilanlar','Kuponcekm','kodceksatismerkezi',
-  'ticaretyapn','kuponkodhesapilan','kodkuponmarketi','xalimsatiim',
-  'satiskodtakasi','kuponkodalimsatimm','ceksatkupon',
-  'kuponindirimpazari','zeroticaret','indirim363','ticaretgruptr'
-];
-
-const DEFAULT_MSG = `🚀 *SMM PANEL — EN UCUZ SOSYAL MEDYA HİZMETLERİ* 🚀
-
-Instagram, TikTok, YouTube ve Telegram için Türkiye'nin en hızlı SMM hizmetleri!
-
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
-🔥 *HİZMETLERİMİZ*
-⚡ Instagram Gerçek Takipçi & Beğeni
-⚡ TikTok Keşfet & Takipçi Paketleri
-⚡ YouTube İzlenme, Abone & 4000 Saat
-⚡ Telegram Kanal Üyesi & Görüntülenme
-▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬
-
-✅ 7/24 Otomatik Teslimat | Şifresiz | Bayi Fiyatları
-
-👉 Sipariş & bilgi için DM: @SosyalPazarSMM`;
-
-let statusData = {};
-let deliveryState = {};
-let activeTab = 'overview';
-let logsInterval = null;
-
-// ─── TAB ────────────────────────────────────────────────────────────
-function showTab(t) {
-    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-    document.getElementById('tab-' + t).classList.add('active');
-    document.getElementById('tb' + t.charAt(0).toUpperCase() + t.slice(1)).classList.add('active');
-    activeTab = t;
-    if (t === 'groups') renderGroups();
-    if (t === 'message') initEditor();
-    if (t === 'logs') fetchLogs();
-}
-
-// ─── STATUS ──────────────────────────────────────────────────────────
-async function fetchStatus() {
-    try {
-        const res = await fetch(API + '/health');
-        const d = await res.json();
-        statusData = d;
-
-        const sent = d.sent || 0;
-        const state = d.state || 'unknown';
-        const lastCycle = d.last_cycle;
-        const lastError = d.last_error;
-
-        document.getElementById('statSent').textContent = sent;
-        document.getElementById('statState').textContent = state;
-
-        if (lastCycle) {
-            const t = new Date(lastCycle);
-            document.getElementById('statLastCycle').textContent =
-                t.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'});
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById('tab-' + tabId).classList.add('active');
+            
+            if (tabId === 'reklam') document.getElementById('tabBtnReklam').classList.add('active');
+            if (tabId === 'gruplar') {
+                document.getElementById('tabBtnGruplar').classList.add('active');
+                renderGroupsTable();
+            }
+            if (tabId === 'mesaj') document.getElementById('tabBtnMesaj').classList.add('active');
         }
 
-        // Status badge
-        const badge = document.getElementById('statusBadge');
-        const badgeText = document.getElementById('statusText');
-        badge.className = 'status-badge';
-        if (state === 'running') {
-            badge.classList.add('running');
-            badgeText.textContent = 'Çalışıyor';
-            document.getElementById('headerStatus').textContent = 'Canlı • Çalışıyor';
-            badge.querySelector('.badge-dot').classList.add('animate');
-        } else if (state === 'waiting_for_config' || state === 'configuration_error') {
-            badge.classList.add('waiting');
-            badgeText.textContent = 'Yapılandırma Bekleniyor';
-            document.getElementById('headerStatus').textContent = 'Uyarı';
-        } else {
-            badge.classList.add('stopped');
-            badgeText.textContent = 'Durduruldu / Hata';
-            document.getElementById('headerStatus').textContent = 'Durduruldu';
+        function renderGroupsTable() {
+            const tbody = document.getElementById('groupsTableBody');
+            tbody.innerHTML = '';
+            GROUPS.forEach((g, i) => {
+                tbody.innerHTML += `
+                    <tr>
+                        <td style="color:var(--text-secondary);">${i+1}</td>
+                        <td><code style="color:#a78bfa;">@${g}</code></td>
+                        <td><span style="color:#4ade80; font-size:0.8rem; padding:3px 8px; border-radius:99px; background:rgba(34,197,94,0.1);">Aktif</span></td>
+                    </tr>`;
+            });
         }
 
-        // Error
-        if (lastError) {
-            document.getElementById('lastError').style.display = 'block';
-            document.getElementById('lastErrorText').textContent = lastError;
-        } else {
-            document.getElementById('lastError').style.display = 'none';
+        async function updateStatus() {
+            try {
+                const res = await fetch('/api/status');
+                const data = await res.json();
+                
+                const statusBadge = document.getElementById('botStatus');
+                const statusText = document.getElementById('botStatusText');
+                
+                if (data.state === 'running') {
+                    statusBadge.className = 'status-badge running';
+                    statusText.textContent = 'Çalışıyor';
+                } else {
+                    statusBadge.className = 'status-badge stopped';
+                    statusText.textContent = 'Durduruldu';
+                }
+
+                document.getElementById('statSentMessages').textContent = data.sent || 0;
+                document.getElementById('statProgress').textContent = (data.progress || 0) + '%';
+            } catch(e) {}
         }
 
-        // Progress
-        const totalGroups = GROUPS.length;
-        const now = Date.now() / 1000;
-        const interval = 3600;
-        let sentThisCycle = 0;
-        for (const g of GROUPS) {
-            const last = deliveryState[g] || 0;
-            if (now - last < interval) sentThisCycle++;
-        }
-        const pct = Math.round((sentThisCycle / totalGroups) * 100);
-        document.getElementById('progressBar').style.width = pct + '%';
-        document.getElementById('progressText').textContent = `${sentThisCycle} / ${totalGroups} grup`;
-
-    } catch(e) {
-        document.getElementById('headerStatus').textContent = 'Bağlanamıyor';
-        document.getElementById('statusText').textContent = 'Sunucuya erişilemiyor';
-    }
-}
-
-async function fetchDeliveryState() {
-    try {
-        const res = await fetch(API + '/delivery_state');
-        if (res.ok) deliveryState = await res.json();
-    } catch(e) {}
-}
-
-// ─── GROUPS ──────────────────────────────────────────────────────────
-function renderGroups() {
-    const tbody = document.getElementById('groupsTable');
-    const now = Date.now() / 1000;
-    const interval = 3600;
-    tbody.innerHTML = '';
-
-    GROUPS.forEach((g, i) => {
-        const last = deliveryState[g] || 0;
-        const elapsed = now - last;
-        const done = elapsed < interval;
-
-        let badge, lastStr;
-        if (!last) {
-            badge = '<span class="badge-pending"><i class="fa-solid fa-clock"></i> Bekliyor</span>';
-            lastStr = '—';
-        } else if (done) {
-            const remaining = Math.round((interval - elapsed) / 60);
-            badge = `<span class="badge-ok"><i class="fa-solid fa-check"></i> Gönderildi</span>`;
-            lastStr = `${remaining} dk kaldı`;
-        } else {
-            badge = '<span class="badge-pending"><i class="fa-solid fa-rotate"></i> Sırada</span>';
-            const d = new Date(last * 1000);
-            lastStr = d.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit'});
+        async function updateLogs() {
+            try {
+                const res = await fetch('/api/logs');
+                const data = await res.json();
+                const terminal = document.getElementById('terminalOutput');
+                
+                if (data.logs && data.logs.length > 0) {
+                    let html = '';
+                    data.logs.forEach(line => {
+                        let cls = 'log-info';
+                        if (line.includes('✅') || line.includes('Gonderildi')) cls = 'log-ok';
+                        if (line.includes('⚠️') || line.includes('WARNING') || line.includes('Kalan:')) cls = 'log-warn';
+                        if (line.includes('❌') || line.includes('HATA') || line.includes('ERROR')) cls = 'log-err';
+                        
+                        html += `<div class="terminal-line ${cls}">${escapeHtml(line)}</div>`;
+                    });
+                    terminal.innerHTML = html;
+                    terminal.scrollTop = terminal.scrollHeight;
+                }
+            } catch(e) {}
         }
 
-        tbody.innerHTML += `
-        <tr>
-            <td style="color:var(--muted);">${i+1}</td>
-            <td><code style="color:var(--accent2);">@${g}</code></td>
-            <td style="color:var(--muted); font-size:0.82rem;">${lastStr}</td>
-            <td>${badge}</td>
-            <td style="text-align:right;">
-                <button class="btn btn-danger" style="padding:5px 12px;font-size:0.78rem;" onclick="removeGroup('${g}')">
-                    <i class="fa-solid fa-trash-can"></i>
-                </button>
-            </td>
-        </tr>`;
-    });
-
-    document.getElementById('groupCount').textContent = `(${GROUPS.length} grup)`;
-    document.getElementById('statGroups').textContent = GROUPS.length;
-}
-
-function addGroup() {
-    const val = document.getElementById('newGroupInput').value.trim().replace('@', '');
-    if (!val) return;
-    if (GROUPS.includes(val)) { showToast('Bu grup zaten listede!', 'err'); return; }
-    GROUPS.push(val);
-    document.getElementById('newGroupInput').value = '';
-    renderGroups();
-    showToast('Grup eklendi: @' + val);
-}
-
-function removeGroup(g) {
-    const idx = GROUPS.indexOf(g);
-    if (idx > -1) GROUPS.splice(idx, 1);
-    renderGroups();
-    showToast('@' + g + ' listeden çıkarıldı', 'err');
-}
-
-// ─── MESSAGE ─────────────────────────────────────────────────────────
-function initEditor() {
-    const editor = document.getElementById('msgEditor');
-    if (!editor.value) editor.value = DEFAULT_MSG;
-    updatePreview();
-}
-
-function updatePreview() {
-    const raw = document.getElementById('msgEditor').value;
-    let html = raw
-        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-        .replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')
-        .replace(/\*(.*?)\*/g,'<strong>$1</strong>')
-        .replace(/_(.*?)_/g,'<em>$1</em>')
-        .replace(/\n/g,'<br>');
-    document.getElementById('msgPreview').innerHTML = html;
-}
-
-function saveMessage() {
-    showToast('Mesaj kaydedildi! Deploy için GitHub\'a push edilmeli.', 'ok');
-}
-
-// ─── LOGS ────────────────────────────────────────────────────────────
-async function fetchLogs() {
-    const term = document.getElementById('logsTerminal');
-    try {
-        const d = await (await fetch(API + '/health')).json();
-        const now = new Date().toLocaleTimeString('tr-TR');
-
-        let html = '';
-        html += `<div><span class="log-time">[${now}]</span><span class="log-info">Health check alındı</span></div>`;
-        html += `<div><span class="log-time">[${now}]</span><span class="${d.state==='running'?'log-ok':'log-warn'}">state: ${d.state}</span></div>`;
-        html += `<div><span class="log-time">[${now}]</span><span class="log-ok">sent: ${d.sent || 0} mesaj</span></div>`;
-        if (d.last_error) {
-            html += `<div><span class="log-time">[${now}]</span><span class="log-err">hata: ${d.last_error}</span></div>`;
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
         }
-        if (d.last_cycle) {
-            html += `<div><span class="log-time">[${now}]</span><span class="log-info">son döngü: ${d.last_cycle}</span></div>`;
+
+        async function startBot() {
+            await fetch('/api/bot/start', { method: 'POST' });
+            updateStatus();
+            updateLogs();
         }
-        term.innerHTML += html;
-        term.scrollTop = term.scrollHeight;
-    } catch(e) {
-        term.innerHTML += `<div><span class="log-err">[HATA] Sunucuya bağlanılamadı: ${e.message}</span></div>`;
-    }
-}
 
-function clearLogs() {
-    document.getElementById('logsTerminal').innerHTML = '';
-}
+        async function stopBot() {
+            await fetch('/api/bot/stop', { method: 'POST' });
+            updateStatus();
+            updateLogs();
+        }
 
-// ─── ACTIONS ─────────────────────────────────────────────────────────
-function joinGroups() {
-    showToast('Gruplara katılma komutu gönderildi!');
-    logLine('Gruplara katılma işlemi başlatıldı...', 'log-info');
-}
+        async function joinGroups() {
+            await fetch('/api/bot/join', { method: 'POST' });
+            alert('Gruplara katılma işlemi başlatıldı!');
+        }
 
-function forceBlast() {
-    showToast('Anlık mesaj gönderimi tetiklendi!');
-    logLine('Anlık blast komutu gönderildi!', 'log-ok');
-}
+        // Init
+        document.getElementById('msgInput').value = `SOSYALPAZAR SMM
+Instagram, TikTok, YouTube, Telegram ve Spotify hizmetleri
 
-function saveInterval() {
-    const val = document.getElementById('intervalInput').value;
-    document.getElementById('statInterval').textContent = val + ' dk';
-    showToast('Aralık güncellendi: ' + val + ' dakika');
-}
+INSTAGRAM TAKİPÇİ
+Genel takipçi 30 gün telafi — 1K: 27,41 TL
+Hızlı takipçi 30 gün telafi — 1K: 33,88 TL
+Yüksek hızlı takipçi — 1K: 39,66 TL
+Türk takipçi 30 gün telafi — 1K: 241,38 TL
+Türk kaliteli takipçi — 1K: 274,46 TL
+Türk kadın takipçi 30 gün telafi — 1K: 223,50 TL
 
-function logLine(msg, cls) {
-    const term = document.getElementById('logsTerminal');
-    if (!term) return;
-    const now = new Date().toLocaleTimeString('tr-TR');
-    term.innerHTML += `<div><span class="log-time">[${now}]</span><span class="${cls||'log-info'}">${msg}</span></div>`;
-    term.scrollTop = term.scrollHeight;
-}
+INSTAGRAM BEĞENİ
+Genel beğeni 30 gün telafi — 1K: 3,19 TL
+Türk beğeni 30 gün telafi — 1K: 95,18 TL
+Türk kadın/erkek beğeni seçenekleri mevcut
 
-// ─── TOAST ───────────────────────────────────────────────────────────
-function showToast(msg, type) {
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.className = type === 'err' ? 'toast-err' : 'toast-ok';
-    t.style.display = 'block';
-    setTimeout(() => { t.style.display = 'none'; }, 3000);
-}
+TIKTOK
+TikTok takipçi 30 gün telafi — 1K: 140,60 TL
+Hızlı TikTok takipçi — 1K: 146,33 TL
+TikTok beğeni 30 gün telafi — 1K: 13,25 TL
+TikTok izlenme 30 gün telafi — 1K: 2,38 TL
+TikTok paylaşım — 1K: 8,99 TL
 
-// ─── INIT ────────────────────────────────────────────────────────────
-initEditor();
-fetchStatus();
-fetchDeliveryState();
-setInterval(fetchStatus, 10000);
-setInterval(fetchDeliveryState, 30000);
-</script>
+YOUTUBE
+YouTube abone 30 gün telafi — 1K: 1.021,01 TL
+YouTube beğeni 30 gün telafi — 1K: 64,97 TL
+Türk YouTube izlenme — 1K: 107,45 TL
+YouTube izlenme ve etkileşim paketleri mevcut
+
+TELEGRAM
+Telegram kanal/grup üyesi — 1K: 29,94 TL
+Telegram abone 30 gün telafi — 1K: 55,39 TL
+Telegram gönderi görüntülenme — 1K: 81,08 TL
+
+SPOTIFY
+Spotify takipçi 30 gün telafi — 1K: 13,69 TL
+Spotify kaydetme — 1K: 19,68 TL
+
+Seçili servislerde hızlı başlangıç
+Uygun fiyatlı paket seçenekleri
+Sipariş için şifre gerekmez
+Güncel servis, miktar ve sipariş bilgisi için DM:
+@SosyalPazarSMM`;
+
+        document.getElementById('msgPreview').textContent = document.getElementById('msgInput').value;
+
+        updateStatus();
+        updateLogs();
+        setInterval(updateStatus, 3000);
+        setInterval(updateLogs, 2500);
+    </script>
 </body>
 </html>
