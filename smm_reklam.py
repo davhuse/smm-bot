@@ -150,31 +150,6 @@ def save_state(value):
         add_log(f"State kaydetme hatasi: {exc}", "WARNING")
 
 
-async def join_group_safe(client, group):
-    try:
-        add_log(f"[SosyalPazarSMM] ➕ Grupa katilma deneniyor: @{group}")
-        await client(JoinChannelRequest(group))
-        add_log(f"[SosyalPazarSMM] ✅ Grupa katilindi: @{group}")
-        wait_after_join = random.randint(45, 75)
-        add_log(f"[SosyalPazarSMM] 🛡️ Katilim sonrasi anti-spam beklemesi: {wait_after_join}sn @{group}")
-        await asyncio.sleep(wait_after_join)
-        return True
-    except InviteRequestSentError:
-        add_log(f"[SosyalPazarSMM] 📩 Katilim istegi gonderildi (Admin onayi bekleniyor): @{group}")
-        return False
-    except UserAlreadyParticipantError:
-        add_log(f"[SosyalPazarSMM] ℹ️ Zaten grupta var: @{group}")
-        return True
-    except FloodWaitError as exc:
-        add_log(f"[SosyalPazarSMM] ⚠️ Katilma bekleme suresi: {exc.seconds}s @{group}", "WARNING")
-        await asyncio.sleep(exc.seconds + 5)
-        return False
-    except Exception as exc:
-        add_log(f"[SosyalPazarSMM] ❌ Grupa katilma basarisiz @{group}: {type(exc).__name__}", "WARNING")
-        return False
-
-
-# ── Publisher loop ──────────────────────────────────────────────────────────
 async def run_publisher():
     global _bot_running, _client_instance
 
@@ -202,6 +177,9 @@ async def run_publisher():
     add_log(f"[SosyalPazarSMM] Hesap baglandi: {me.first_name} (@{me.username}) ID:{me.id}")
     status.update(state="running", last_error=None)
 
+    from telethon.tl.functions.channels import JoinChannelRequest
+    from telethon.tl.functions.messages import ImportChatInviteRequest
+
     while True:
         if not _bot_running:
             status["state"] = "stopped"
@@ -212,6 +190,9 @@ async def run_publisher():
         delivery_state = load_state()
         _delivery_state_cache.update(delivery_state)
         now = time.time()
+        
+        # 1. SEND PHASE
+        not_joined_groups = []
 
         for idx, group in enumerate(groups):
             if not _bot_running:
@@ -242,50 +223,37 @@ async def run_publisher():
                 add_log(f"[SosyalPazarSMM] 🛡️ Gruplar arasi bekleme: {group_delay}sn")
                 await asyncio.sleep(group_delay)
 
-            except SlowModeWaitError as sme:
-                wait_sec = getattr(sme, "seconds", 60) or 60
-                add_log(f"[SosyalPazarSMM] 🐌 @{group} -> SlowMode aktif ({wait_sec}sn); grup ertelendi.")
-                delivery_state[group] = time.time() - (interval - wait_sec)
-                _delivery_state_cache.update(delivery_state)
-                save_state(delivery_state)
-
-            except (UserBannedInChannelError, ChatWriteForbiddenError):
-                add_log(f"[SosyalPazarSMM] ⛔ @{group} -> Banlı/Yazma izni yok! (Grup 24 saat ertelendi)", "WARNING")
-                delivery_state[group] = time.time() + (24 * 3600 - interval)
-                _delivery_state_cache.update(delivery_state)
-                save_state(delivery_state)
-
-            except (UserNotParticipantError, ChannelPrivateError):
-                add_log(f"[SosyalPazarSMM] ⚠️ Gruba katilinmamis, katiliniyor: @{group}", "WARNING")
-                joined = await join_group_safe(client, group)
-                if joined:
-                    try:
-                        entity = await client.get_entity(group)
-                        await client.send_message(entity, message, link_preview=False)
-                        delivery_state[group] = time.time()
-                        _delivery_state_cache.update(delivery_state)
-                        save_state(delivery_state)
-                        status["sent"] += 1
-                        add_log(f"[SosyalPazarSMM] ✅ Katilim sonrasi gonderildi -> @{group}")
-                        
-                        group_delay = random.randint(40, 90)
-                        add_log(f"[SosyalPazarSMM] 🛡️ Gruplar arasi bekleme: {group_delay}sn")
-                        await asyncio.sleep(group_delay)
-                    except Exception as e:
-                        add_log(f"[SosyalPazarSMM] ❌ @{group} gonderilemedi: {type(e).__name__}", "WARNING")
-                else:
-                    delivery_state[group] = time.time() + (24 * 3600 - interval)
-                    _delivery_state_cache.update(delivery_state)
-                    save_state(delivery_state)
+            except FloodWaitError as exc:
+                wait_sec = exc.seconds
+                status["last_error"] = f"FloodWait {wait_sec}s"
+                add_log(f"[SosyalPazarSMM] ⏳ FloodWait {wait_sec}sn; hesap duraklatıldı.")
+                await asyncio.sleep(wait_sec + 2)
 
             except (PeerFloodError, UserRestrictedError) as e:
-                add_log(f"[SosyalPazarSMM] 🚫 Telegram hesap kısıtlaması ({type(e).__name__}); 2 saat duraklatildi.", "WARNING")
-                await asyncio.sleep(7200)
+                wait_sec = getattr(e, "seconds", 48 * 3600) or 48 * 3600
+                add_log(f"[SosyalPazarSMM] 🚫 Hesap kısıtlaması algılandı ({type(e).__name__}); {wait_sec}sn duraklatıldı.")
+                await asyncio.sleep(wait_sec + 2)
 
-            except FloodWaitError as exc:
-                status["last_error"] = f"FloodWait {exc.seconds}s"
-                add_log(f"[SosyalPazarSMM] ⚠️ Flood wait @{group}: {exc.seconds}sn", "WARNING")
-                await asyncio.sleep(exc.seconds + 5)
+            except UserBannedInChannelError:
+                add_log(f"[SosyalPazarSMM] ❌ @{group} -> Banlandık! (UserBannedInChannel)")
+                delivery_state[group] = time.time() + 86400  # 24 saat bekle
+                _delivery_state_cache.update(delivery_state)
+                save_state(delivery_state)
+
+            except ChatWriteForbiddenError:
+                add_log(f"[SosyalPazarSMM] 🔒 @{group} -> Yazma izni yok! (ChatWriteForbidden)")
+                delivery_state[group] = time.time() + 86400  # 24 saat bekle
+                _delivery_state_cache.update(delivery_state)
+                save_state(delivery_state)
+
+            except SlowModeWaitError as sme:
+                wait_sec = getattr(sme, "seconds", 60) or 60
+                add_log(f"[SosyalPazarSMM] 🐌 @{group} -> SlowMode aktif ({wait_sec}sn bekleme).")
+                await asyncio.sleep(wait_sec + 2)
+
+            except (UserNotParticipantError, ChannelPrivateError):
+                add_log(f"[SosyalPazarSMM] ⚠️ @{group} henüz üye değiliz, katılım listesine eklendi.")
+                not_joined_groups.append(group)
 
             except RPCError as exc:
                 err_name = type(exc).__name__
@@ -298,6 +266,44 @@ async def run_publisher():
                 add_log(f"[SosyalPazarSMM] ❌ Hata @{group}: {err_name}", "ERROR")
 
             now = time.time()
+
+        # 2. JOIN PHASE
+        if not_joined_groups and _bot_running:
+            add_log(f"\n[SosyalPazarSMM] 🔍 {len(not_joined_groups)} gruba henüz üye değiliz. Katılma başlıyor...")
+            for group in not_joined_groups:
+                if not _bot_running:
+                    break
+                try:
+                    add_log(f"[SosyalPazarSMM] ➕ Katılma deneniyor: @{group}")
+                    if len(group) == 16 and not group.startswith('@') and not '/' in group:
+                        await client(ImportChatInviteRequest(group))
+                        add_log(f"[SosyalPazarSMM] ✅ Özel gruba katıldı: @{group}")
+                    else:
+                        await client(JoinChannelRequest(group))
+                        add_log(f"[SosyalPazarSMM] ✅ Gruba katıldı: @{group}")
+                    
+                    wait_after_join = random.randint(45, 75)
+                    add_log(f"[SosyalPazarSMM] 🛡️ Katılım sonrası anti-spam beklemesi: {wait_after_join}sn")
+                    await asyncio.sleep(wait_after_join)
+                    
+                except InviteRequestSentError:
+                    add_log(f"[SosyalPazarSMM] ⏳ @{group} -> Katılım isteği gönderildi (onay bekleniyor).")
+                except UserAlreadyParticipantError:
+                    add_log(f"[SosyalPazarSMM] ℹ️ Zaten grupta var: @{group}")
+                except FloodWaitError as exc:
+                    wait_sec = exc.seconds
+                    add_log(f"[SosyalPazarSMM] ⚠️ Join flood {wait_sec}sn; hesap duraklatılıyor.")
+                    await asyncio.sleep(wait_sec + 2)
+                except Exception as exc:
+                    err_msg = str(exc)
+                    err_type = type(exc).__name__
+                    if 'banned' in err_msg.lower() or 'UserBannedInChannel' in err_type:
+                        add_log(f"[SosyalPazarSMM] ⛔ @{group} -> Bu hesap bu gruptan BANLANMIŞ. 24 saat denenmeyecek.")
+                        delivery_state[group] = time.time() + 86400
+                        _delivery_state_cache.update(delivery_state)
+                        save_state(delivery_state)
+                    else:
+                        add_log(f"[SosyalPazarSMM] ❌ @{group} katılım hatası: {err_type}", "WARNING")
 
         status["last_cycle"] = datetime.now(timezone.utc).isoformat()
         status["progress"] = 100
