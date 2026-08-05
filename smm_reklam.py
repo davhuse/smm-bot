@@ -5,6 +5,7 @@ import collections
 import json
 import logging
 import os
+import random
 import sys
 import time
 from datetime import datetime, timezone
@@ -149,10 +150,14 @@ async def join_group_safe(client, group):
         add_log(f"[SosyalPazarSMM] ➕ Grupa katilma deneniyor: @{group}")
         await client(JoinChannelRequest(group))
         add_log(f"[SosyalPazarSMM] ✅ Grupa katilindi: @{group}")
+        # Katıldıktan sonra en az 45-75 saniye insan taklidi beklemesi yap
+        wait_after_join = random.randint(45, 75)
+        add_log(f"[SosyalPazarSMM] 🛡️ Katilim sonrasi anti-spam beklemesi: {wait_after_join}sn @{group}")
+        await asyncio.sleep(wait_after_join)
         return True
     except FloodWaitError as exc:
         add_log(f"[SosyalPazarSMM] ⚠️ Katilma bekleme suresi: {exc.seconds}s @{group}", "WARNING")
-        await asyncio.sleep(exc.seconds + 2)
+        await asyncio.sleep(exc.seconds + 5)
         return False
     except Exception as exc:
         add_log(f"[SosyalPazarSMM] ❌ Grupa katilma basarisiz @{group}: {type(exc).__name__}", "WARNING")
@@ -173,7 +178,7 @@ async def run_publisher():
     status["total_groups"] = len(groups)
     add_log(f"[SosyalPazarSMM] Bot baslatiliyor... {len(groups)} hedef grup, {interval}sn aralik")
 
-    client = TelegramClient(StringSession(session), int(api_id), api_hash)
+    client = TelegramClient(StringSession(session), int(api_id), api_hash, flood_sleep_threshold=60)
     _client_instance = client
     await client.connect()
 
@@ -222,12 +227,16 @@ async def run_publisher():
                 save_state(delivery_state)
                 status["sent"] += 1
                 add_log(f"[SosyalPazarSMM] ✅ Mesaj Gonderildi -> @{group}")
-                await asyncio.sleep(15)
+                
+                # Gruplar arasi güvenli rastgele bekleme (40-90 saniye)
+                group_delay = random.randint(40, 90)
+                add_log(f"[SosyalPazarSMM] 🛡️ Gruplar arasi bekleme: {group_delay}sn")
+                await asyncio.sleep(group_delay)
+
             except (ChatWriteForbiddenError, UserNotParticipantError, ChannelPrivateError):
                 add_log(f"[SosyalPazarSMM] ⚠️ Gruba katilinmamis, katiliniyor: @{group}", "WARNING")
                 joined = await join_group_safe(client, group)
                 if joined:
-                    await asyncio.sleep(5)
                     try:
                         entity = await client.get_entity(group)
                         await client.send_message(entity, message, link_preview=False)
@@ -236,7 +245,10 @@ async def run_publisher():
                         save_state(delivery_state)
                         status["sent"] += 1
                         add_log(f"[SosyalPazarSMM] ✅ Katilim sonrasi gonderildi -> @{group}")
-                        await asyncio.sleep(15)
+                        
+                        group_delay = random.randint(40, 90)
+                        add_log(f"[SosyalPazarSMM] 🛡️ Gruplar arasi bekleme: {group_delay}sn")
+                        await asyncio.sleep(group_delay)
                     except Exception as e:
                         add_log(f"[SosyalPazarSMM] ❌ @{group} gonderilemedi: {type(e).__name__}", "WARNING")
             except FloodWaitError as exc:
