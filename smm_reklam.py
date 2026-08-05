@@ -19,10 +19,13 @@ from telethon.errors import (
     ChatWriteForbiddenError,
     FloodWaitError,
     InviteRequestSentError,
+    PeerFloodError,
     RPCError,
+    SlowModeWaitError,
     UserAlreadyParticipantError,
     UserBannedInChannelError,
     UserNotParticipantError,
+    UserRestrictedError,
 )
 from telethon.sessions import StringSession
 from telethon.tl.functions.channels import JoinChannelRequest
@@ -239,7 +242,20 @@ async def run_publisher():
                 add_log(f"[SosyalPazarSMM] 🛡️ Gruplar arasi bekleme: {group_delay}sn")
                 await asyncio.sleep(group_delay)
 
-            except (ChatWriteForbiddenError, UserNotParticipantError, ChannelPrivateError):
+            except SlowModeWaitError as sme:
+                wait_sec = getattr(sme, "seconds", 60) or 60
+                add_log(f"[SosyalPazarSMM] 🐌 @{group} -> SlowMode aktif ({wait_sec}sn); grup ertelendi.")
+                delivery_state[group] = time.time() - (interval - wait_sec)
+                _delivery_state_cache.update(delivery_state)
+                save_state(delivery_state)
+
+            except (UserBannedInChannelError, ChatWriteForbiddenError):
+                add_log(f"[SosyalPazarSMM] ⛔ @{group} -> Banlı/Yazma izni yok! (Grup 24 saat ertelendi)", "WARNING")
+                delivery_state[group] = time.time() + (24 * 3600 - interval)
+                _delivery_state_cache.update(delivery_state)
+                save_state(delivery_state)
+
+            except (UserNotParticipantError, ChannelPrivateError):
                 add_log(f"[SosyalPazarSMM] ⚠️ Gruba katilinmamis, katiliniyor: @{group}", "WARNING")
                 joined = await join_group_safe(client, group)
                 if joined:
@@ -257,14 +273,25 @@ async def run_publisher():
                         await asyncio.sleep(group_delay)
                     except Exception as e:
                         add_log(f"[SosyalPazarSMM] ❌ @{group} gonderilemedi: {type(e).__name__}", "WARNING")
+                else:
+                    delivery_state[group] = time.time() + (24 * 3600 - interval)
+                    _delivery_state_cache.update(delivery_state)
+                    save_state(delivery_state)
+
+            except (PeerFloodError, UserRestrictedError) as e:
+                add_log(f"[SosyalPazarSMM] 🚫 Telegram hesap kısıtlaması ({type(e).__name__}); 2 saat duraklatildi.", "WARNING")
+                await asyncio.sleep(7200)
+
             except FloodWaitError as exc:
                 status["last_error"] = f"FloodWait {exc.seconds}s"
                 add_log(f"[SosyalPazarSMM] ⚠️ Flood wait @{group}: {exc.seconds}sn", "WARNING")
                 await asyncio.sleep(exc.seconds + 5)
+
             except RPCError as exc:
                 err_name = type(exc).__name__
                 status["last_error"] = f"@{group}: {err_name}"
                 add_log(f"[SosyalPazarSMM] ❌ @{group} gonderilemedi: {err_name}", "WARNING")
+
             except Exception as exc:
                 err_name = type(exc).__name__
                 status["last_error"] = f"@{group}: {err_name}"
