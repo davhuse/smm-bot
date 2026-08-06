@@ -142,11 +142,16 @@ APPROVED_MESSAGE = (
     "👉 Sipariş ve Detaylı Bilgi İçin DM: @SosyalPazarSMM"
 )
 APPROVED_GROUPS = (
-    "satcek,kuponsat,ceksat,ticaretcanavari,alsatticarettz,"
-    "ticaretforumofficial,kodceksatismerkezi,ticaretyapn,"
-    "kuponkodhesapilan,kodkuponmarketi,xalimsatiim,satiskodtakasi,"
-    "kuponkodalimsatimm,ceksatkupon,wishx_2,kuponindirimpazari,"
-    "indirim363,ticaretgruptr"
+    "TicaretGrubuuu,kuponindirimsatis,zeroticaret,tahaaslan11,"
+    "alimsatimmerkezii,sosyalmedyaalimsatimticaret,kuponsatisgrup,"
+    "kuponcekkodsatis,referanslinkpaylasimigrup,kuponsatislari0,"
+    "YuceKuponSatis,letgoilanlari,-3608209943,kuponhesapsatis,"
+    "kuponvekodsatisgrubu,indirimkodusatis,mukyemek,kupongrupta,"
+    "kuponkodindirimilanlar,Kuponcekm,satcek,kuponsat,ceksat,"
+    "ticaretcanavari,alsatticarettz,ticaretforumofficial,"
+    "kodceksatismerkezi,ticaretyapn,kuponkodhesapilan,kodkuponmarketi,"
+    "xalimsatiim,satiskodtakasi,kuponkodalimsatimm,ceksatkupon,"
+    "wishx_2,kuponindirimpazari,indirim363,ticaretgruptr"
 )
 
 
@@ -170,7 +175,9 @@ def add_log(msg, level="INFO"):
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 def groups_from_env():
-    raw = os.environ.get("SMM_TARGET_GROUPS", APPROVED_GROUPS)
+    # Always include the full Froxy-approved list; an environment value may
+    # add extra groups but cannot silently shrink it back to the old 18.
+    raw = ",".join(filter(None, (APPROVED_GROUPS, os.environ.get("SMM_TARGET_GROUPS", ""))))
     return list(dict.fromkeys(item.strip().lstrip("@") for item in raw.split(",") if item.strip()))
 
 
