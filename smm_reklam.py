@@ -476,12 +476,6 @@ async def run_publisher():
             # stale delivery timestamp must never postpone joining a group.
             in_group = group.lower() in joined_usernames
             if not in_group:
-                try:
-                    await client.get_entity(group)
-                    in_group = True
-                except Exception:
-                    pass
-            if not in_group:
                 add_log(f"[SosyalPazarSMM] ⚠️ @{group} henüz üye değiliz, katılım listesine eklendi.")
                 not_joined_groups.append(group)
                 continue
