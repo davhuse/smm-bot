@@ -445,6 +445,56 @@ async def run_publisher():
             add_log("[SosyalPazarSMM] Eski cooldown kayıtları 1 saatlik pencereye normalize edildi.")
 
         delivery_blacklist = permanent_blacklist(delivery_state)
+
+        # Join missing targets before the blast cooldown.  This keeps the
+        # membership phase from being hidden behind a 60-minute account wait
+        # after a restart, while the five-group cap matches Froxy's
+        # anti-spam behaviour.  Groups with a pending admin approval are
+        # reported and will not be retried in this pass.
+        preflight_joined = set()
+        try:
+            async for dialog in client.iter_dialogs():
+                if dialog.is_channel or dialog.is_group:
+                    username = getattr(dialog.entity, "username", None)
+                    if username:
+                        preflight_joined.add(username.lower())
+                    preflight_joined.add(str(dialog.id))
+        except Exception as exc:
+            add_log(f"[SosyalPazarSMM] Katılım öncesi diyalog okuma hatası: {type(exc).__name__}", "WARNING")
+
+        preflight_missing = [
+            group for group in groups
+            if group.strip().lstrip("@").lower() not in delivery_blacklist
+            and group.strip().lstrip("@").lower() not in preflight_joined
+        ]
+        if preflight_missing and _bot_running:
+            add_log(
+                f"[SosyalPazarSMM] 🔍 {len(preflight_missing)} gruba henüz üye değiliz. "
+                "Katılma ön aşaması başlıyor..."
+            )
+            for group in preflight_missing[:5]:
+                if not _bot_running:
+                    break
+                try:
+                    add_log(f"[SosyalPazarSMM] ➕ Katılma deneniyor: @{group}")
+                    if len(group) == 16 and not group.startswith("@") and "/" not in group:
+                        await client(ImportChatInviteRequest(group))
+                    else:
+                        await client(JoinChannelRequest(group))
+                    add_log(f"[SosyalPazarSMM] ✅ Katılım başarılı: @{group}")
+                    await asyncio.sleep(random.randint(45, 75))
+                except InviteRequestSentError:
+                    add_log(f"[SosyalPazarSMM] ⏳ @{group} -> Katılım isteği gönderildi (onay bekleniyor).")
+                except UserAlreadyParticipantError:
+                    add_log(f"[SosyalPazarSMM] ℹ️ Zaten grupta var: @{group}")
+                except FloodWaitError as exc:
+                    add_log(f"[SosyalPazarSMM] ⚠️ Join flood {exc.seconds}sn; bu çevrim duraklatıldı.")
+                    await asyncio.sleep(exc.seconds + 2)
+                    break
+                except Exception as exc:
+                    err_type = type(exc).__name__
+                    add_log(f"[SosyalPazarSMM] ❌ @{group} katılım hatası: {err_type}", "WARNING")
+
         await wait_for_blast_window(delivery_state)
         if not _bot_running:
             continue
@@ -576,7 +626,8 @@ async def run_publisher():
         # 2. JOIN PHASE
         if not_joined_groups and _bot_running:
             add_log(f"\n[SosyalPazarSMM] 🔍 {len(not_joined_groups)} gruba henüz üye değiliz. Katılma başlıyor...")
-            for group in not_joined_groups:
+            # Froxy ile aynı güvenli katılım limiti: tur başına en fazla 5 grup.
+            for group in not_joined_groups[:5]:
                 if not _bot_running:
                     break
                 try:
