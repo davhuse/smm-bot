@@ -472,7 +472,10 @@ async def run_publisher():
                 f"[SosyalPazarSMM] 🔍 {len(preflight_missing)} gruba henüz üye değiliz. "
                 "Katılma ön aşaması başlıyor..."
             )
-            for group in preflight_missing[:5]:
+            successful_preflight_joins = 0
+            for group in preflight_missing:
+                if successful_preflight_joins >= 5:
+                    break
                 if not _bot_running:
                     break
                 try:
@@ -488,6 +491,7 @@ async def run_publisher():
                     else:
                         await client(JoinChannelRequest(group))
                     add_log(f"[SosyalPazarSMM] ✅ Katılım başarılı: @{group}")
+                    successful_preflight_joins += 1
                     await asyncio.sleep(random.randint(45, 75))
                 except InviteRequestSentError:
                     add_log(f"[SosyalPazarSMM] ⏳ @{group} -> Katılım isteği gönderildi (onay bekleniyor).")
@@ -499,7 +503,14 @@ async def run_publisher():
                     break
                 except Exception as exc:
                     err_type = type(exc).__name__
-                    add_log(f"[SosyalPazarSMM] ❌ @{group} katılım hatası: {err_type}", "WARNING")
+                    if err_type in {"ValueError", "UsernameInvalidError", "UsernameNotOccupiedError", "ChannelPrivateError"}:
+                        delivery_blacklist.add(group.strip().lstrip("@").lower())
+                        set_permanent_blacklist(delivery_state, delivery_blacklist)
+                        _delivery_state_cache.update(delivery_state)
+                        save_state(delivery_state)
+                        add_log(f"[SosyalPazarSMM] ⛔ @{group} erişilemez/geçersiz; kalıcı olarak atlandı.", "WARNING")
+                    else:
+                        add_log(f"[SosyalPazarSMM] ❌ @{group} katılım hatası: {err_type}", "WARNING")
 
         await wait_for_blast_window(delivery_state)
         if not _bot_running:
@@ -632,8 +643,13 @@ async def run_publisher():
         # 2. JOIN PHASE
         if not_joined_groups and _bot_running:
             add_log(f"\n[SosyalPazarSMM] 🔍 {len(not_joined_groups)} gruba henüz üye değiliz. Katılma başlıyor...")
-            # Froxy ile aynı güvenli katılım limiti: tur başına en fazla 5 grup.
-            for group in not_joined_groups[:5]:
+            # Froxy ile aynı güvenli katılım limiti: tur başına en fazla 5
+            # başarılı katılım. Geçersiz veya onay bekleyen bir grup bu
+            # kotayı tüketmemeli.
+            successful_joins = 0
+            for group in not_joined_groups:
+                if successful_joins >= 5:
+                    break
                 if not _bot_running:
                     break
                 try:
@@ -650,6 +666,7 @@ async def run_publisher():
                     else:
                         await client(JoinChannelRequest(group))
                         add_log(f"[SosyalPazarSMM] ✅ Gruba katıldı: @{group}")
+                    successful_joins += 1
                     
                     wait_after_join = random.randint(45, 75)
                     add_log(f"[SosyalPazarSMM] 🛡️ Katılım sonrası anti-spam beklemesi: {wait_after_join}sn")
