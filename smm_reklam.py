@@ -69,14 +69,8 @@ status = {
 # ── Defaults ────────────────────────────────────────────────────────────────
 DEFAULT_API_ID = "31076280"
 DEFAULT_API_HASH = "7ba4072dcf0a05a7ccf80e570866b6d8"
-DEFAULT_SESSION = (
-    "1AZWarzcBu3UZfk5_JqM6uQ79PaU4GCOX90-IFu7Ne4ssOo2dikO2cgWjKM-j_V95Yh"
-    "G12dkQJUcqyfUxLiEp7FoUTWUAg7zBkxyDl51EzqGmdCO36M2c-1TyuOoKi5XHV_NeSK"
-    "pj-0xbl9CKOL2L9auuU7z0vGjQlvt5leKxu4fFkeLlSj3mwBE_z4eJ5hUq61qwy3gsUQ"
-    "K0DEgmqnVcpxVA5VQ-PfdFay8pqt3oH4xBY4mjysblTJU5jW3BiNBTzmyiM2McQV2wvd"
-    "_PjhiVUij5IBqx5SAK-4urYCS3gHWCyl-dNmfOlccpm_-UUjPGHbReGIR5BIPtGM5PTKh"
-    "LzDuyk0F9vEQ="
-)
+DEFAULT_SESSION = ""
+# No embedded StringSession: Render supplies it through the environment.
 DEFAULT_MESSAGE = """🚀 SOSYALPAZAR SMM HİZMETLERİ 🚀
 
 🔥 INSTAGRAM
@@ -130,7 +124,7 @@ def add_log(msg, level="INFO"):
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 def groups_from_env():
-    raw = os.environ.get("SMM_TARGET_GROUPS", DEFAULT_GROUPS)
+    raw = os.environ.get("SMM_TARGET_GROUPS", "")
     return list(dict.fromkeys(item.strip().lstrip("@") for item in raw.split(",") if item.strip()))
 
 
@@ -254,10 +248,32 @@ async def run_publisher():
 
     api_id = os.environ.get("TELEGRAM_API_ID", DEFAULT_API_ID).strip()
     api_hash = os.environ.get("TELEGRAM_API_HASH", DEFAULT_API_HASH).strip()
-    session = os.environ.get("SMM_STRING_SESSION", DEFAULT_SESSION).strip()
-    message = os.environ.get("SMM_MESSAGE", DEFAULT_MESSAGE).strip()
+    session = os.environ.get("SMM_STRING_SESSION", "").strip()
+    message = os.environ.get("SMM_MESSAGE", "").strip()
     groups = groups_from_env()
     interval = max(MIN_INTERVAL_SECONDS, int(os.environ.get("SMM_INTERVAL_MINUTES", "60")) * 60)
+
+    if not session or not message or not groups:
+        missing = []
+        if not session:
+            missing.append("SMM_STRING_SESSION")
+        if not message:
+            missing.append("SMM_MESSAGE")
+        if not groups:
+            missing.append("SMM_TARGET_GROUPS")
+        status.update(
+            state="waiting_configuration",
+            last_error=f"Eksik yapılandırma: {', '.join(missing)}",
+            total_groups=0,
+            progress=0,
+            current_group=None,
+        )
+        add_log(
+            "[SosyalPazarSMM] Yapılandırma bekleniyor; gönderim ve Telegram bağlantısı yok. "
+            + ", ".join(missing),
+            "WARNING",
+        )
+        return
 
     status["total_groups"] = len(groups)
     add_log(f"[SosyalPazarSMM] Bot baslatiliyor... {len(groups)} hedef grup, {interval}sn aralik")
