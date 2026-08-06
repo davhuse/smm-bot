@@ -42,6 +42,8 @@ log = logging.getLogger("smm-reklam")
 STATE_FILE = Path("smm_delivery_state.json")
 LOG_FILE = Path("smm_bot_log.txt")
 MIN_INTERVAL_SECONDS = 60 * 15
+MAX_PERSISTED_COOLDOWN_SECONDS = 60 * 60
+DISABLED_RENDER_HOST_MARKERS = ("smm-bot-1-w7pv",)
 
 base_dir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(
@@ -65,6 +67,17 @@ status = {
     "progress": 0,
     "current_group": None,
 }
+
+
+def duplicate_render_service_disabled():
+    """Keep the old duplicate Render service from opening Telegram sessions."""
+    render_values = (
+        os.environ.get("RENDER_EXTERNAL_URL", ""),
+        os.environ.get("RENDER_EXTERNAL_HOSTNAME", ""),
+        os.environ.get("RENDER_SERVICE_NAME", ""),
+    )
+    joined = " ".join(render_values).casefold()
+    return any(marker in joined for marker in DISABLED_RENDER_HOST_MARKERS)
 
 # ── Defaults ────────────────────────────────────────────────────────────────
 DEFAULT_API_ID = "31076280"
@@ -274,6 +287,21 @@ async def connection_watchdog(client):
 async def run_publisher():
     global _bot_running, _client_instance
 
+    if duplicate_render_service_disabled():
+        status.update(
+            state="disabled_duplicate",
+            last_error="Eski duplicate Render servisi devre dışı",
+            total_groups=0,
+            progress=0,
+            current_group=None,
+        )
+        add_log(
+            "[SosyalPazarSMM] Eski duplicate Render servisi devre dışı; "
+            "Telegram bağlantısı açılmadı.",
+            "WARNING",
+        )
+        return
+
     api_id = os.environ.get("TELEGRAM_API_ID", DEFAULT_API_ID).strip()
     api_hash = os.environ.get("TELEGRAM_API_HASH", DEFAULT_API_HASH).strip()
     session = os.environ.get("SMM_STRING_SESSION", "").strip()
@@ -337,6 +365,24 @@ async def run_publisher():
         delivery_state = load_state()
         _delivery_state_cache.update(delivery_state)
         now = time.time()
+
+        # A previous duplicate service wrote timestamps several hours into the
+        # future. Clamp those stale records to one normal cooldown window so a
+        # group cannot remain blocked for 400+ minutes.
+        normalized = False
+        for saved_group, saved_time in list(delivery_state.items()):
+            try:
+                if float(saved_time) > now + MAX_PERSISTED_COOLDOWN_SECONDS:
+                    delivery_state[saved_group] = now
+                    normalized = True
+            except (TypeError, ValueError):
+                delivery_state.pop(saved_group, None)
+                normalized = True
+        if normalized:
+            _delivery_state_cache.clear()
+            _delivery_state_cache.update(delivery_state)
+            save_state(delivery_state)
+            add_log("[SosyalPazarSMM] Eski cooldown kayıtları 1 saatlik pencereye normalize edildi.")
         
         # 0. GET JOINED GROUPS
         joined_usernames = set()
