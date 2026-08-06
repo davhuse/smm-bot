@@ -43,6 +43,11 @@ STATE_FILE = Path("smm_delivery_state.json")
 LOG_FILE = Path("smm_bot_log.txt")
 MIN_INTERVAL_SECONDS = 60 * 15
 MAX_PERSISTED_COOLDOWN_SECONDS = 60 * 60
+BLAST_INTERVAL_SECONDS = 60 * 60
+INTER_GROUP_DELAY_MIN = 20
+INTER_GROUP_DELAY_MAX = 45
+ACCOUNT_LAST_BLAST_KEY = "__ACCOUNT_LAST_BLAST_TIME__"
+PERMANENT_BLACKLIST_KEY = "__PERMANENT_BLACKLIST__"
 DISABLED_RENDER_HOST_MARKERS = ("smm-bot-1-w7pv",)
 
 base_dir = os.path.abspath(os.path.dirname(__file__))
@@ -244,6 +249,50 @@ def save_state(value):
     except Exception as exc:
         add_log(f"State kaydetme hatasi: {exc}", "WARNING")
 
+
+def permanent_blacklist(state):
+    value = state.get(PERMANENT_BLACKLIST_KEY, [])
+    if isinstance(value, str):
+        value = value.split(",")
+    if not isinstance(value, list):
+        return set()
+    return {str(item).strip().lstrip("@").lower() for item in value if str(item).strip()}
+
+
+def set_permanent_blacklist(state, groups):
+    state[PERMANENT_BLACKLIST_KEY] = sorted(groups)
+
+
+def last_blast_remaining(state, now=None):
+    now = now or time.time()
+    try:
+        last = float(state.get(ACCOUNT_LAST_BLAST_KEY, 0) or 0)
+    except (TypeError, ValueError):
+        last = 0
+    if not last:
+        return 0
+    return max(0, int(BLAST_INTERVAL_SECONDS - (now - last)))
+
+
+async def wait_for_blast_window(state):
+    remaining = last_blast_remaining(state)
+    if not remaining:
+        return state
+    add_log(
+        f"[SosyalPazarSMM] ⏳ Son blast kaydından sonra kalan süre: "
+        f"{remaining // 60}dk {remaining % 60}sn"
+    )
+    while remaining > 0 and _bot_running:
+        status.update(
+            state="waiting",
+            last_error=None,
+            progress=0,
+            current_group=None,
+        )
+        await asyncio.sleep(min(15, remaining))
+        remaining = last_blast_remaining(state)
+    return state
+
 # ── Watchdogs ───────────────────────────────────────────────────────────────
 async def presence_watchdog(client):
     from telethon.tl.types import UserStatusOnline, UserStatusRecently
@@ -307,7 +356,9 @@ async def run_publisher():
     session = os.environ.get("SMM_STRING_SESSION", "").strip()
     message = os.environ.get("SMM_MESSAGE", APPROVED_MESSAGE).strip()
     groups = groups_from_env()
-    interval = max(MIN_INTERVAL_SECONDS, int(os.environ.get("SMM_INTERVAL_MINUTES", "60")) * 60)
+    # Match the Froxy publisher: one fixed account-level blast window. The
+    # per-group cooldown is also kept at this same one-hour interval.
+    interval = BLAST_INTERVAL_SECONDS
 
     if not session or not message or not groups:
         missing = []
@@ -371,6 +422,8 @@ async def run_publisher():
         # group cannot remain blocked for 400+ minutes.
         normalized = False
         for saved_group, saved_time in list(delivery_state.items()):
+            if saved_group == PERMANENT_BLACKLIST_KEY:
+                continue
             try:
                 if float(saved_time) > now + MAX_PERSISTED_COOLDOWN_SECONDS:
                     delivery_state[saved_group] = now
@@ -383,6 +436,11 @@ async def run_publisher():
             _delivery_state_cache.update(delivery_state)
             save_state(delivery_state)
             add_log("[SosyalPazarSMM] Eski cooldown kayıtları 1 saatlik pencereye normalize edildi.")
+
+        delivery_blacklist = permanent_blacklist(delivery_state)
+        await wait_for_blast_window(delivery_state)
+        if not _bot_running:
+            continue
         
         # 0. GET JOINED GROUPS
         joined_usernames = set()
@@ -401,6 +459,11 @@ async def run_publisher():
         for idx, group in enumerate(groups):
             if not _bot_running:
                 break
+
+            group_key = group.strip().lstrip("@").lower()
+            if group_key in delivery_blacklist:
+                add_log(f"[SosyalPazarSMM] ⛔ @{group} kalıcı kara listede, atlanıyor.")
+                continue
 
             last_time = float(delivery_state.get(group, 0))
             elapsed = now - last_time
@@ -434,13 +497,15 @@ async def run_publisher():
             try:
                 entity = await client.get_entity(group)
                 await client.send_message(entity, message, link_preview=False)
-                delivery_state[group] = time.time()
+                accepted_at = time.time()
+                delivery_state[group] = accepted_at
+                delivery_state[ACCOUNT_LAST_BLAST_KEY] = accepted_at
                 _delivery_state_cache.update(delivery_state)
                 save_state(delivery_state)
                 status["sent"] += 1
                 add_log(f"[SosyalPazarSMM] ✅ Mesaj Gonderildi -> @{group}")
                 
-                group_delay = random.randint(40, 90)
+                group_delay = random.randint(INTER_GROUP_DELAY_MIN, INTER_GROUP_DELAY_MAX)
                 add_log(f"[SosyalPazarSMM] 🛡️ Gruplar arasi bekleme: {group_delay}sn")
                 await asyncio.sleep(group_delay)
 
@@ -457,18 +522,23 @@ async def run_publisher():
 
             except UserBannedInChannelError:
                 add_log(f"[SosyalPazarSMM] ❌ @{group} -> Banlandık! (UserBannedInChannel)")
-                delivery_state[group] = time.time() + 86400  # 24 saat bekle
+                delivery_blacklist.add(group_key)
+                set_permanent_blacklist(delivery_state, delivery_blacklist)
                 _delivery_state_cache.update(delivery_state)
                 save_state(delivery_state)
 
             except ChatWriteForbiddenError:
                 add_log(f"[SosyalPazarSMM] 🔒 @{group} -> Yazma izni yok! (ChatWriteForbidden)")
-                delivery_state[group] = time.time() + 86400  # 24 saat bekle
+                delivery_blacklist.add(group_key)
+                set_permanent_blacklist(delivery_state, delivery_blacklist)
                 _delivery_state_cache.update(delivery_state)
                 save_state(delivery_state)
 
             except SlowModeWaitError as sme:
                 wait_sec = getattr(sme, "seconds", 60) or 60
+                delivery_state[group] = time.time() + wait_sec + 30
+                _delivery_state_cache.update(delivery_state)
+                save_state(delivery_state)
                 add_log(f"[SosyalPazarSMM] 🐌 @{group} -> SlowMode aktif ({wait_sec}sn bekleme).")
                 await asyncio.sleep(wait_sec + 2)
 
