@@ -103,6 +103,30 @@ DEFAULT_GROUPS = (
     "kuponindirimpazari,zeroticaret,indirim363,ticaretgruptr"
 )
 
+# Owner-approved production copy and the same active group list used by the
+# Froxy publisher. Environment variables can override these values later.
+APPROVED_MESSAGE = (
+    "🚀 SOSYALPAZAR SMM HİZMETLERİ 🚀\n\n"
+    "🔥 INSTAGRAM\n"
+    "• Genel takipçi 1K: 27,41 TL\n"
+    "• Türk takipçi 1K: 241,38 TL\n"
+    "• Beğeni 1K: 3,19 TL'den\n\n"
+    "🔥 TIKTOK\n"
+    "• Takipçi 1K: 140,60 TL\n"
+    "• Beğeni 1K: 13,25 TL • İzlenme 1K: 2,38 TL\n\n"
+    "🔥 YOUTUBE\n"
+    "• Abone 1K: 1.021 TL • Beğeni 1K: 64,97 TL\n\n"
+    "✅ 30 gün telafili • Şifresiz • Hızlı başlangıç\n"
+    "📩 Sipariş ve detay: @SosyalPazarSMM"
+)
+APPROVED_GROUPS = (
+    "satcek,kuponsat,ceksat,ticaretcanavari,alsatticarettz,"
+    "ticaretforumofficial,kodceksatismerkezi,ticaretyapn,"
+    "kuponkodhesapilan,kodkuponmarketi,xalimsatiim,satiskodtakasi,"
+    "kuponkodalimsatimm,ceksatkupon,wishx_2,kuponindirimpazari,"
+    "indirim363,ticaretgruptr"
+)
+
 
 # ── Logging helper ──────────────────────────────────────────────────────────
 def add_log(msg, level="INFO"):
@@ -124,7 +148,7 @@ def add_log(msg, level="INFO"):
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 def groups_from_env():
-    raw = os.environ.get("SMM_TARGET_GROUPS", "")
+    raw = os.environ.get("SMM_TARGET_GROUPS", APPROVED_GROUPS)
     return list(dict.fromkeys(item.strip().lstrip("@") for item in raw.split(",") if item.strip()))
 
 
@@ -249,7 +273,7 @@ async def run_publisher():
     api_id = os.environ.get("TELEGRAM_API_ID", DEFAULT_API_ID).strip()
     api_hash = os.environ.get("TELEGRAM_API_HASH", DEFAULT_API_HASH).strip()
     session = os.environ.get("SMM_STRING_SESSION", "").strip()
-    message = os.environ.get("SMM_MESSAGE", "").strip()
+    message = os.environ.get("SMM_MESSAGE", APPROVED_MESSAGE).strip()
     groups = groups_from_env()
     interval = max(MIN_INTERVAL_SECONDS, int(os.environ.get("SMM_INTERVAL_MINUTES", "60")) * 60)
 
