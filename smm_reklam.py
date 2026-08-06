@@ -8,6 +8,7 @@ import os
 import random
 import sys
 import time
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Thread
@@ -49,6 +50,7 @@ INTER_GROUP_DELAY_MAX = 45
 ACCOUNT_LAST_BLAST_KEY = "__ACCOUNT_LAST_BLAST_TIME__"
 PERMANENT_BLACKLIST_KEY = "__PERMANENT_BLACKLIST__"
 DISABLED_RENDER_HOST_MARKERS = ("smm-bot-1-w7pv",)
+KEEPALIVE_INTERVAL_SECONDS = 300
 
 base_dir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(
@@ -71,6 +73,8 @@ status = {
     "total_groups": 0,
     "progress": 0,
     "current_group": None,
+    "process_started_at": datetime.now(timezone.utc).isoformat(),
+    "last_keepalive": None,
 }
 
 
@@ -339,6 +343,35 @@ async def connection_watchdog(client):
         await asyncio.sleep(30)
 
 
+def _ping_health(url):
+    with urllib.request.urlopen(url, timeout=20) as response:
+        response.read(64)
+        return response.status
+
+
+async def render_keepalive_watchdog():
+    """Keep a Render web service from idling while the publisher is active."""
+    base_url = (
+        os.environ.get("SMM_KEEPALIVE_URL", "").strip()
+        or os.environ.get("RENDER_EXTERNAL_URL", "").strip()
+    )
+    if not base_url:
+        add_log("[SosyalPazarSMM] Render keep-alive URL yok; servis uykuya geçebilir.", "WARNING")
+        return
+
+    health_url = base_url.rstrip("/") + "/health"
+    add_log(f"[SosyalPazarSMM] Render keep-alive watchdog aktif: {health_url}")
+    while _bot_running:
+        try:
+            status_code = await asyncio.to_thread(_ping_health, health_url)
+            status["last_keepalive"] = datetime.now(timezone.utc).isoformat()
+            if status_code >= 400:
+                add_log(f"[SosyalPazarSMM] Keep-alive HTTP {status_code}", "WARNING")
+        except Exception as exc:
+            add_log(f"[SosyalPazarSMM] Keep-alive hatası: {type(exc).__name__}", "WARNING")
+        await asyncio.sleep(KEEPALIVE_INTERVAL_SECONDS)
+
+
 
 async def run_publisher():
     global _bot_running, _client_instance
@@ -409,6 +442,7 @@ async def run_publisher():
     # Start watchdogs
     asyncio.create_task(presence_watchdog(client))
     asyncio.create_task(connection_watchdog(client))
+    asyncio.create_task(render_keepalive_watchdog())
 
     from telethon.tl.functions.channels import JoinChannelRequest
     from telethon.tl.functions.messages import ImportChatInviteRequest
