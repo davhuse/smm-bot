@@ -49,6 +49,7 @@ INTER_GROUP_DELAY_MIN = 20
 INTER_GROUP_DELAY_MAX = 45
 ACCOUNT_LAST_BLAST_KEY = "__ACCOUNT_LAST_BLAST_TIME__"
 PERMANENT_BLACKLIST_KEY = "__PERMANENT_BLACKLIST__"
+JOIN_RESTRICTION_KEY = "__JOIN_RESTRICTION_UNTIL__"
 DISABLED_RENDER_HOST_MARKERS = ("smm-bot-1-w7pv",)
 KEEPALIVE_INTERVAL_SECONDS = 300
 
@@ -463,7 +464,7 @@ async def run_publisher():
         # group cannot remain blocked for 400+ minutes.
         normalized = False
         for saved_group, saved_time in list(delivery_state.items()):
-            if saved_group == PERMANENT_BLACKLIST_KEY:
+            if saved_group in {PERMANENT_BLACKLIST_KEY, JOIN_RESTRICTION_KEY}:
                 continue
             try:
                 if float(saved_time) > now + MAX_PERSISTED_COOLDOWN_SECONDS:
@@ -479,6 +480,11 @@ async def run_publisher():
             add_log("[SosyalPazarSMM] Eski cooldown kayıtları 1 saatlik pencereye normalize edildi.")
 
         delivery_blacklist = permanent_blacklist(delivery_state)
+        try:
+            join_restricted_until = float(delivery_state.get(JOIN_RESTRICTION_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            join_restricted_until = 0
+        join_allowed = time.time() >= join_restricted_until
 
         # Join missing targets before the blast cooldown.  This keeps the
         # membership phase from being hidden behind a 60-minute account wait
@@ -501,7 +507,12 @@ async def run_publisher():
             if group.strip().lstrip("@").lower() not in delivery_blacklist
             and group.strip().lstrip("@").lower() not in preflight_joined
         ]
-        if preflight_missing and _bot_running:
+        if preflight_missing and _bot_running and not join_allowed:
+            remaining = max(0, int(join_restricted_until - time.time()))
+            add_log(
+                f"[SosyalPazarSMM] Join flood koruması aktif; katılım {remaining}sn sonra tekrar denenecek."
+            )
+        if preflight_missing and _bot_running and join_allowed:
             add_log(
                 f"[SosyalPazarSMM] 🔍 {len(preflight_missing)} gruba henüz üye değiliz. "
                 "Katılma ön aşaması başlıyor..."
@@ -532,8 +543,11 @@ async def run_publisher():
                 except UserAlreadyParticipantError:
                     add_log(f"[SosyalPazarSMM] ℹ️ Zaten grupta var: @{group}")
                 except FloodWaitError as exc:
-                    add_log(f"[SosyalPazarSMM] ⚠️ Join flood {exc.seconds}sn; bu çevrim duraklatıldı.")
-                    await asyncio.sleep(exc.seconds + 2)
+                    delivery_state[JOIN_RESTRICTION_KEY] = time.time() + exc.seconds + 30
+                    _delivery_state_cache.update(delivery_state)
+                    save_state(delivery_state)
+                    join_allowed = False
+                    add_log(f"[SosyalPazarSMM] ⚠️ Join flood {exc.seconds}sn; katılım geçici durduruldu.")
                     break
                 except Exception as exc:
                     err_type = type(exc).__name__
@@ -675,7 +689,7 @@ async def run_publisher():
             now = time.time()
 
         # 2. JOIN PHASE
-        if not_joined_groups and _bot_running:
+        if not_joined_groups and _bot_running and join_allowed:
             add_log(f"\n[SosyalPazarSMM] 🔍 {len(not_joined_groups)} gruba henüz üye değiliz. Katılma başlıyor...")
             # Froxy ile aynı güvenli katılım limiti: tur başına en fazla 5
             # başarılı katılım. Geçersiz veya onay bekleyen bir grup bu
@@ -711,9 +725,12 @@ async def run_publisher():
                 except UserAlreadyParticipantError:
                     add_log(f"[SosyalPazarSMM] ℹ️ Zaten grupta var: @{group}")
                 except FloodWaitError as exc:
-                    wait_sec = exc.seconds
-                    add_log(f"[SosyalPazarSMM] ⚠️ Join flood {wait_sec}sn; hesap duraklatılıyor.")
-                    await asyncio.sleep(wait_sec + 2)
+                    delivery_state[JOIN_RESTRICTION_KEY] = time.time() + exc.seconds + 30
+                    _delivery_state_cache.update(delivery_state)
+                    save_state(delivery_state)
+                    join_allowed = False
+                    add_log(f"[SosyalPazarSMM] ⚠️ Join flood {exc.seconds}sn; katılım geçici durduruldu.")
+                    break
                 except Exception as exc:
                     err_msg = str(exc)
                     err_type = type(exc).__name__
