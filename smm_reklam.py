@@ -477,7 +477,13 @@ async def run_publisher():
                     break
                 try:
                     add_log(f"[SosyalPazarSMM] ➕ Katılma deneniyor: @{group}")
-                    if len(group) == 16 and not group.startswith("@") and "/" not in group:
+                    raw_group = group.strip()
+                    is_invite_hash = (
+                        raw_group.startswith("+")
+                        or raw_group.startswith("joinchat/")
+                        or "/+" in raw_group
+                    )
+                    if is_invite_hash:
                         await client(ImportChatInviteRequest(group))
                     else:
                         await client(JoinChannelRequest(group))
@@ -632,7 +638,13 @@ async def run_publisher():
                     break
                 try:
                     add_log(f"[SosyalPazarSMM] ➕ Katılma deneniyor: @{group}")
-                    if len(group) == 16 and not group.startswith('@') and not '/' in group:
+                    raw_group = group.strip()
+                    is_invite_hash = (
+                        raw_group.startswith("+")
+                        or raw_group.startswith("joinchat/")
+                        or "/+" in raw_group
+                    )
+                    if is_invite_hash:
                         await client(ImportChatInviteRequest(group))
                         add_log(f"[SosyalPazarSMM] ✅ Özel gruba katıldı: @{group}")
                     else:
