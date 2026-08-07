@@ -50,6 +50,7 @@ INTER_GROUP_DELAY_MAX = 45
 ACCOUNT_LAST_BLAST_KEY = "__ACCOUNT_LAST_BLAST_TIME__"
 PERMANENT_BLACKLIST_KEY = "__PERMANENT_BLACKLIST__"
 JOIN_RESTRICTION_KEY = "__JOIN_RESTRICTION_UNTIL__"
+PENDING_JOIN_KEY = "__PENDING_JOIN_REQUESTS__"
 DISABLED_RENDER_HOST_MARKERS = ("smm-bot-1-w7pv",)
 KEEPALIVE_INTERVAL_SECONDS = 300
 
@@ -275,6 +276,19 @@ def set_permanent_blacklist(state, groups):
     state[PERMANENT_BLACKLIST_KEY] = sorted(groups)
 
 
+def pending_join_requests(state):
+    value = state.get(PENDING_JOIN_KEY, [])
+    if isinstance(value, str):
+        value = value.split(",")
+    if not isinstance(value, list):
+        return set()
+    return {str(item).strip().lstrip("@").lower() for item in value if str(item).strip()}
+
+
+def set_pending_join_requests(state, groups):
+    state[PENDING_JOIN_KEY] = sorted(groups)
+
+
 def last_blast_remaining(state, now=None):
     now = now or time.time()
     try:
@@ -464,7 +478,7 @@ async def run_publisher():
         # group cannot remain blocked for 400+ minutes.
         normalized = False
         for saved_group, saved_time in list(delivery_state.items()):
-            if saved_group in {PERMANENT_BLACKLIST_KEY, JOIN_RESTRICTION_KEY}:
+            if saved_group in {PERMANENT_BLACKLIST_KEY, JOIN_RESTRICTION_KEY, PENDING_JOIN_KEY}:
                 continue
             try:
                 if float(saved_time) > now + MAX_PERSISTED_COOLDOWN_SECONDS:
@@ -480,6 +494,7 @@ async def run_publisher():
             add_log("[SosyalPazarSMM] Eski cooldown kayıtları 1 saatlik pencereye normalize edildi.")
 
         delivery_blacklist = permanent_blacklist(delivery_state)
+        pending_joins = pending_join_requests(delivery_state)
         try:
             join_restricted_until = float(delivery_state.get(JOIN_RESTRICTION_KEY, 0) or 0)
         except (TypeError, ValueError):
@@ -502,9 +517,18 @@ async def run_publisher():
         except Exception as exc:
             add_log(f"[SosyalPazarSMM] Katılım öncesi diyalog okuma hatası: {type(exc).__name__}", "WARNING")
 
+        approved_pending = pending_joins.intersection(preflight_joined)
+        if approved_pending:
+            pending_joins.difference_update(approved_pending)
+            set_pending_join_requests(delivery_state, pending_joins)
+            _delivery_state_cache.update(delivery_state)
+            save_state(delivery_state)
+            add_log(f"[SosyalPazarSMM] ✅ {len(approved_pending)} bekleyen katılım onaylandı.")
+
         preflight_missing = [
             group for group in groups
             if group.strip().lstrip("@").lower() not in delivery_blacklist
+            and group.strip().lstrip("@").lower() not in pending_joins
             and group.strip().lstrip("@").lower() not in preflight_joined
         ]
         if preflight_missing and _bot_running and not join_allowed:
@@ -539,8 +563,13 @@ async def run_publisher():
                     successful_preflight_joins += 1
                     await asyncio.sleep(random.randint(45, 75))
                 except InviteRequestSentError:
+                    pending_joins.add(group.strip().lstrip("@").lower())
+                    set_pending_join_requests(delivery_state, pending_joins)
+                    _delivery_state_cache.update(delivery_state)
+                    save_state(delivery_state)
                     add_log(f"[SosyalPazarSMM] ⏳ @{group} -> Katılım isteği gönderildi (onay bekleniyor).")
                 except UserAlreadyParticipantError:
+                    pending_joins.discard(group.strip().lstrip("@").lower())
                     add_log(f"[SosyalPazarSMM] ℹ️ Zaten grupta var: @{group}")
                 except FloodWaitError as exc:
                     delivery_state[JOIN_RESTRICTION_KEY] = time.time() + exc.seconds + 30
@@ -585,6 +614,9 @@ async def run_publisher():
             group_key = group.strip().lstrip("@").lower()
             if group_key in delivery_blacklist:
                 add_log(f"[SosyalPazarSMM] ⛔ @{group} kalıcı kara listede, atlanıyor.")
+                continue
+            if group_key in pending_joins:
+                add_log(f"[SosyalPazarSMM] ⏳ @{group} katılım isteği onay bekliyor, tekrar denenmiyor.")
                 continue
 
             # Match Froxy's order: membership is checked before cooldown. A
@@ -721,8 +753,13 @@ async def run_publisher():
                     await asyncio.sleep(wait_after_join)
                     
                 except InviteRequestSentError:
+                    pending_joins.add(group.strip().lstrip("@").lower())
+                    set_pending_join_requests(delivery_state, pending_joins)
+                    _delivery_state_cache.update(delivery_state)
+                    save_state(delivery_state)
                     add_log(f"[SosyalPazarSMM] ⏳ @{group} -> Katılım isteği gönderildi (onay bekleniyor).")
                 except UserAlreadyParticipantError:
+                    pending_joins.discard(group.strip().lstrip("@").lower())
                     add_log(f"[SosyalPazarSMM] ℹ️ Zaten grupta var: @{group}")
                 except FloodWaitError as exc:
                     delivery_state[JOIN_RESTRICTION_KEY] = time.time() + exc.seconds + 30
