@@ -64,6 +64,8 @@ DISABLED_RENDER_HOST_MARKERS = tuple(
     if marker.strip()
 )
 KEEPALIVE_INTERVAL_SECONDS = 300
+LIVE_MONITOR_INTERVAL_SECONDS = 300
+LIVE_MONITOR_MINUTES = max(0, int(os.environ.get("SMM_LIVE_MONITOR_MINUTES", "90") or 0))
 
 base_dir = os.path.abspath(os.path.dirname(__file__))
 app = Flask(
@@ -88,6 +90,10 @@ status = {
     "current_group": None,
     "process_started_at": datetime.now(timezone.utc).isoformat(),
     "last_keepalive": None,
+    "monitor_started_at": None,
+    "monitor_ends_at": None,
+    "monitor_last_at": None,
+    "monitor_samples": 0,
 }
 
 
@@ -527,6 +533,46 @@ async def render_keepalive_watchdog():
         await asyncio.sleep(KEEPALIVE_INTERVAL_SECONDS)
 
 
+async def live_monitor(client):
+    """Write a short, read-only health snapshot every five minutes for one run."""
+    if not LIVE_MONITOR_MINUTES:
+        return
+
+    started_at = time.time()
+    ends_at = started_at + LIVE_MONITOR_MINUTES * 60
+    status["monitor_started_at"] = datetime.fromtimestamp(started_at, timezone.utc).isoformat()
+    status["monitor_ends_at"] = datetime.fromtimestamp(ends_at, timezone.utc).isoformat()
+    add_log(
+        f"[SosyalPazarSMM] {LIVE_MONITOR_MINUTES} dakikalık canlı izleme başladı; "
+        "her 5 dakikada salt-okunur durum kaydı alınacak."
+    )
+
+    while _bot_running and time.time() < ends_at:
+        state = load_state()
+        _, summary = group_state_snapshot(state, groups_from_env())
+        connection = "bağlı" if client.is_connected() else "kopuk"
+        cooldown = last_blast_remaining(state)
+        status["monitor_last_at"] = datetime.now(timezone.utc).isoformat()
+        status["monitor_samples"] += 1
+        add_log(
+            "[SosyalPazarSMM] Canlı izleme: "
+            f"bağlantı={connection}, bot={status.get('state')}, "
+            f"blast_kalan={cooldown // 60}dk {cooldown % 60}sn, "
+            f"gönderim={status.get('sent', 0)}, "
+            f"aktif={summary['active']}, onay={summary['pending']}, "
+            f"geçici={summary['temporary']}, kalıcı={summary['permanent']}, "
+            f"son_hata={status.get('last_error') or 'yok'}"
+        )
+        remaining = max(0, ends_at - time.time())
+        await asyncio.sleep(min(LIVE_MONITOR_INTERVAL_SECONDS, remaining))
+
+    if time.time() >= ends_at:
+        add_log(
+            f"[SosyalPazarSMM] {LIVE_MONITOR_MINUTES} dakikalık canlı izleme tamamlandı; "
+            f"{status.get('monitor_samples', 0)} örnek kaydedildi."
+        )
+
+
 
 async def run_publisher():
     global _bot_running, _client_instance
@@ -598,6 +644,7 @@ async def run_publisher():
     asyncio.create_task(presence_watchdog(client))
     asyncio.create_task(connection_watchdog(client))
     asyncio.create_task(render_keepalive_watchdog())
+    asyncio.create_task(live_monitor(client))
 
     from telethon.tl.functions.channels import JoinChannelRequest
     from telethon.tl.functions.messages import ImportChatInviteRequest
