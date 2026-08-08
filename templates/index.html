@@ -212,7 +212,7 @@
                     <i class="fa-solid fa-bullhorn"></i> Reklam Botu
                 </button>
                 <button class="tab-btn" id="tabBtnGruplar" onclick="switchTab('gruplar')">
-                    <i class="fa-solid fa-users"></i> Hedef Gruplar (30)
+                    <i class="fa-solid fa-users"></i> Hedef Gruplar (<span id="targetGroupCount">0</span>)
                 </button>
                 <button class="tab-btn" id="tabBtnMesaj" onclick="switchTab('mesaj')">
                     <i class="fa-solid fa-pen-to-square"></i> Reklam Mesajı
@@ -258,8 +258,12 @@
                     <span class="stat-value" style="color: #60a5fa;" id="statProgress">0%</span>
                 </div>
                 <div class="stat-card glass-panel">
-                    <span class="stat-title">Bot Hesabı</span>
-                    <span class="stat-value" style="font-size: 1.1rem; color: #a78bfa;">@SosyalPazarSMM</span>
+                    <span class="stat-title">Onay Bekleyen Grup</span>
+                    <span class="stat-value" style="color: #fbbf24;" id="statPendingGroups">0</span>
+                </div>
+                <div class="stat-card glass-panel">
+                    <span class="stat-title">Kalıcı Engelli Grup</span>
+                    <span class="stat-value" style="color: var(--danger);" id="statBlockedGroups">0</span>
                 </div>
             </div>
 
@@ -293,6 +297,7 @@
                                 <th>Son Gönderim</th>
                                 <th>Canlı Kalan Süre</th>
                                 <th>Durum</th>
+                                <th>Son Sebep / Hata</th>
                             </tr>
                         </thead>
                         <tbody id="groupsTableBody">
@@ -319,14 +324,7 @@
     </div>
 
     <script>
-        const GROUPS = [
-            "kuponindirimsatis","satcek","kuponsat","ceksat","ticaretcanavari","alsatticarettz",
-            "letgoilanlari","kuponhesapsatis","kuponsatisgrup","kuponcekkodsatis","indirimkodusatis",
-            "alimsatimmerkezii","ticaretforumofficial","kuponsatislari0","yucekuponsatis","kupongrupta",
-            "kuponkodindirimilanlar","Kuponcekm","kodceksatismerkezi","ticaretyapn","kuponkodhesapilan",
-            "kodkuponmarketi","xalimsatiim","satiskodtakasi","kuponkodalimsatimm","ceksatkupon",
-            "kuponindirimpazari","zeroticaret","indirim363","ticaretgruptr"
-        ];
+        const GROUPS = {{ groups|tojson }};
 
         let deliveryState = {};
         const INTERVAL_SECONDS = 3600;
@@ -357,18 +355,38 @@
         function renderGroupsTable() {
             const tbody = document.getElementById('groupsTableBody');
             const now = Date.now() / 1000;
+            const groupStatus = deliveryState.__GROUP_STATUS__ || {};
             tbody.innerHTML = '';
 
             GROUPS.forEach((g, i) => {
-                const lastTime = deliveryState[g] || 0;
+                const key = String(g).replace(/^@/, '').toLowerCase();
+                const detail = groupStatus[key] || {};
+                const lastTime = deliveryState[g] || deliveryState[key] || 0;
                 const elapsed = now - lastTime;
                 const remaining = Math.max(0, INTERVAL_SECONDS - elapsed);
                 
                 let timeStr = '—';
                 let cdHtml = '<span style="color:var(--text-secondary);">Bekliyor / Sırada</span>';
                 let statusBadge = '<span style="color:#fbbf24; font-size:0.8rem; padding:3px 8px; border-radius:99px; background:rgba(245,158,11,0.1);">Sırada</span>';
+                let reasonHtml = '<span style="color:var(--text-secondary);">—</span>';
 
-                if (lastTime > 0) {
+                if (detail.reason) {
+                    reasonHtml = `<span style="color:var(--text-secondary); font-size:0.8rem;">${escapeHtml(detail.reason)}</span>`;
+                }
+
+                if (detail.permanent) {
+                    cdHtml = '<span style="color:#f87171;">Tekrar denenmeyecek</span>';
+                    statusBadge = `<span style="color:#f87171; font-size:0.8rem; padding:3px 8px; border-radius:99px; background:rgba(248,113,113,0.1);">${detail.status === 'legacy_unknown' ? 'Eski kayıt / inceleme' : 'Kalıcı engel'}</span>`;
+                } else if (detail.status === 'pending_approval') {
+                    cdHtml = '<span style="color:#fbbf24;">Admin onayı bekleniyor</span>';
+                    statusBadge = '<span style="color:#fbbf24; font-size:0.8rem; padding:3px 8px; border-radius:99px; background:rgba(245,158,11,0.1);">Onay bekliyor</span>';
+                } else if (detail.next_retry_at && detail.next_retry_at > now) {
+                    const retryRemaining = Math.ceil(detail.next_retry_at - now);
+                    cdHtml = `<span class="countdown-live"><i class="fa-solid fa-stopwatch"></i> ${Math.floor(retryRemaining / 60)}dk ${retryRemaining % 60}sn</span>`;
+                    statusBadge = `<span style="color:#c084fc; font-size:0.8rem; padding:3px 8px; border-radius:99px; background:rgba(192,132,252,0.1);">${detail.status === 'slow_mode' ? 'Slow mode' : 'Geçici bekleme'}</span>`;
+                }
+
+                if (!detail.permanent && detail.status !== 'pending_approval' && !(detail.next_retry_at && detail.next_retry_at > now) && lastTime > 0) {
                     const d = new Date(lastTime * 1000);
                     timeStr = d.toLocaleTimeString('tr-TR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
                     
@@ -390,6 +408,7 @@
                         <td style="color:var(--text-secondary); font-size:0.85rem;">${timeStr}</td>
                         <td>${cdHtml}</td>
                         <td>${statusBadge}</td>
+                        <td>${reasonHtml}</td>
                     </tr>`;
             });
         }
@@ -412,6 +431,11 @@
 
                 document.getElementById('statSentMessages').textContent = data.sent || 0;
                 document.getElementById('statProgress').textContent = (data.progress || 0) + '%';
+                const summary = data.group_summary || {};
+                document.getElementById('statTotalGroups').textContent = summary.active || 0;
+                document.getElementById('statPendingGroups').textContent = summary.pending || 0;
+                document.getElementById('statBlockedGroups').textContent = summary.permanent || 0;
+                document.getElementById('targetGroupCount').textContent = summary.total || GROUPS.length;
             } catch(e) {}
         }
 

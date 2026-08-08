@@ -52,6 +52,8 @@ ACCOUNT_LAST_BLAST_KEY = "__ACCOUNT_LAST_BLAST_TIME__"
 PERMANENT_BLACKLIST_KEY = "__PERMANENT_BLACKLIST__"
 JOIN_RESTRICTION_KEY = "__JOIN_RESTRICTION_UNTIL__"
 PENDING_JOIN_KEY = "__PENDING_JOIN_REQUESTS__"
+GROUP_STATUS_KEY = "__GROUP_STATUS__"
+ACCOUNT_RESTRICTION_KEY = "__ACCOUNT_RESTRICTION_UNTIL__"
 # Do not infer that the active service is a duplicate from its hostname.  The
 # previous hard-coded marker matched the only SMM Render URL and disabled the
 # publisher immediately after startup.  A duplicate can be disabled
@@ -307,6 +309,126 @@ def set_pending_join_requests(state, groups):
     state[PENDING_JOIN_KEY] = sorted(groups)
 
 
+def group_key(value):
+    return str(value or "").strip().lstrip("@").lower()
+
+
+def group_statuses(state):
+    value = state.get(GROUP_STATUS_KEY)
+    if not isinstance(value, dict):
+        value = {}
+        state[GROUP_STATUS_KEY] = value
+    return value
+
+
+def record_group_status(
+    state,
+    group,
+    status_name,
+    reason="",
+    *,
+    permanent=False,
+    next_retry_at=None,
+    attempted_at=None,
+):
+    """Persist an explainable, per-group outcome without changing delivery time."""
+    key = group_key(group)
+    if not key:
+        return
+    now = time.time() if attempted_at is None else attempted_at
+    previous = group_statuses(state).get(key, {})
+    group_statuses(state)[key] = {
+        "status": status_name,
+        "reason": reason,
+        "permanent": bool(permanent),
+        "last_attempt_at": now,
+        "next_retry_at": next_retry_at,
+        "first_seen_at": previous.get("first_seen_at", now),
+    }
+
+
+def migrate_legacy_blacklist_statuses(state):
+    """Make old blacklist entries visible without retrying them automatically."""
+    changed = False
+    statuses = group_statuses(state)
+    for group in permanent_blacklist(state):
+        if group not in statuses:
+            record_group_status(
+                state,
+                group,
+                "legacy_unknown",
+                "Eski kalıcı kayıt: ilk hata nedeni kaydedilmemiş.",
+                permanent=True,
+                attempted_at=time.time(),
+            )
+            changed = True
+    return changed
+
+
+def group_state_snapshot(state, groups, now=None):
+    """Return UI-safe per-group state while retaining the legacy delivery map."""
+    now = time.time() if now is None else now
+    blocked = permanent_blacklist(state)
+    pending = pending_join_requests(state)
+    recorded = group_statuses(state)
+    result = {}
+    summary = {"active": 0, "pending": 0, "temporary": 0, "permanent": 0, "total": len(groups)}
+
+    for group in groups:
+        key = group_key(group)
+        record = dict(recorded.get(key, {}))
+        if key in blocked:
+            record.setdefault("status", "legacy_unknown")
+            record.setdefault("reason", "Kalıcı engel")
+            record["permanent"] = True
+            summary["permanent"] += 1
+        elif key in pending:
+            record.update({"status": "pending_approval", "reason": "Admin katılım onayı bekleniyor.", "permanent": False})
+            summary["pending"] += 1
+        else:
+            try:
+                retry_pending = float(record.get("next_retry_at") or 0) > now
+            except (TypeError, ValueError):
+                retry_pending = False
+            if retry_pending:
+                record["temporary"] = True
+                summary["temporary"] += 1
+            else:
+                record.setdefault("status", "active")
+                record.setdefault("reason", "Gönderim için aktif hedef.")
+                record["permanent"] = False
+                summary["active"] += 1
+        result[key] = record
+    return result, summary
+
+
+async def collect_joined_group_keys(client):
+    joined = set()
+    try:
+        async for dialog in client.iter_dialogs():
+            if dialog.is_channel or dialog.is_group:
+                username = getattr(dialog.entity, "username", None)
+                if username:
+                    joined.add(username.lower())
+                joined.add(str(dialog.id))
+    except Exception as exc:
+        add_log(f"[SosyalPazarSMM] Diyaloglar okunamadı: {type(exc).__name__}", "WARNING")
+    return joined
+
+
+def reconcile_pending_join_approvals(state, pending_joins, joined_keys):
+    approved = pending_joins.intersection(joined_keys)
+    if not approved:
+        return pending_joins, False
+    pending_joins = set(pending_joins)
+    pending_joins.difference_update(approved)
+    set_pending_join_requests(state, pending_joins)
+    for group in approved:
+        record_group_status(state, group, "joined", "Katılım isteği admin tarafından onaylandı.")
+    add_log(f"[SosyalPazarSMM] ✅ {len(approved)} bekleyen katılım onaylandı.")
+    return pending_joins, True
+
+
 def last_blast_remaining(state, now=None):
     now = now or time.time()
     try:
@@ -496,7 +618,13 @@ async def run_publisher():
         # group cannot remain blocked for 400+ minutes.
         normalized = False
         for saved_group, saved_time in list(delivery_state.items()):
-            if saved_group in {PERMANENT_BLACKLIST_KEY, JOIN_RESTRICTION_KEY, PENDING_JOIN_KEY}:
+            if saved_group in {
+                PERMANENT_BLACKLIST_KEY,
+                JOIN_RESTRICTION_KEY,
+                PENDING_JOIN_KEY,
+                GROUP_STATUS_KEY,
+                ACCOUNT_RESTRICTION_KEY,
+            }:
                 continue
             try:
                 if float(saved_time) > now + MAX_PERSISTED_COOLDOWN_SECONDS:
@@ -511,8 +639,33 @@ async def run_publisher():
             save_state(delivery_state)
             add_log("[SosyalPazarSMM] Eski cooldown kayıtları 1 saatlik pencereye normalize edildi.")
 
+        if migrate_legacy_blacklist_statuses(delivery_state):
+            _delivery_state_cache.clear()
+            _delivery_state_cache.update(delivery_state)
+            save_state(delivery_state)
+            add_log("[SosyalPazarSMM] Eski kara liste kayıtları neden bilgisiyle işaretlendi.")
+
         delivery_blacklist = permanent_blacklist(delivery_state)
         pending_joins = pending_join_requests(delivery_state)
+        try:
+            account_restricted_until = float(delivery_state.get(ACCOUNT_RESTRICTION_KEY, 0) or 0)
+        except (TypeError, ValueError):
+            account_restricted_until = 0
+        if account_restricted_until > time.time():
+            remaining = max(1, int(account_restricted_until - time.time()))
+            status.update(
+                state="account_restricted",
+                last_error=f"Telegram hesap kısıtlaması: {remaining}sn kaldı",
+                progress=0,
+                current_group=None,
+            )
+            add_log(
+                f"[SosyalPazarSMM] Hesap düzeyinde Telegram kısıtlaması sürüyor; "
+                f"katılım ve gönderim {remaining}sn duraklatıldı.",
+                "WARNING",
+            )
+            await asyncio.sleep(min(60, remaining))
+            continue
         try:
             join_restricted_until = float(delivery_state.get(JOIN_RESTRICTION_KEY, 0) or 0)
         except (TypeError, ValueError):
@@ -524,24 +677,14 @@ async def run_publisher():
         # after a restart, while the five-group cap matches Froxy's
         # anti-spam behaviour.  Groups with a pending admin approval are
         # reported and will not be retried in this pass.
-        preflight_joined = set()
-        try:
-            async for dialog in client.iter_dialogs():
-                if dialog.is_channel or dialog.is_group:
-                    username = getattr(dialog.entity, "username", None)
-                    if username:
-                        preflight_joined.add(username.lower())
-                    preflight_joined.add(str(dialog.id))
-        except Exception as exc:
-            add_log(f"[SosyalPazarSMM] Katılım öncesi diyalog okuma hatası: {type(exc).__name__}", "WARNING")
-
-        approved_pending = pending_joins.intersection(preflight_joined)
-        if approved_pending:
-            pending_joins.difference_update(approved_pending)
-            set_pending_join_requests(delivery_state, pending_joins)
+        preflight_joined = await collect_joined_group_keys(client)
+        pending_joins, pending_changed = reconcile_pending_join_approvals(
+            delivery_state, pending_joins, preflight_joined
+        )
+        if pending_changed:
+            _delivery_state_cache.clear()
             _delivery_state_cache.update(delivery_state)
             save_state(delivery_state)
-            add_log(f"[SosyalPazarSMM] ✅ {len(approved_pending)} bekleyen katılım onaylandı.")
 
         preflight_missing = [
             group for group in groups
@@ -577,20 +720,37 @@ async def run_publisher():
                         await client(ImportChatInviteRequest(group))
                     else:
                         await client(JoinChannelRequest(group))
+                    record_group_status(delivery_state, group, "joined", "Katılım başarılı.")
+                    _delivery_state_cache.update(delivery_state)
+                    save_state(delivery_state)
                     add_log(f"[SosyalPazarSMM] ✅ Katılım başarılı: @{group}")
                     successful_preflight_joins += 1
                     await asyncio.sleep(random.randint(45, 75))
                 except InviteRequestSentError:
                     pending_joins.add(group.strip().lstrip("@").lower())
                     set_pending_join_requests(delivery_state, pending_joins)
+                    record_group_status(
+                        delivery_state, group, "pending_approval", "Admin katılım onayı bekleniyor."
+                    )
                     _delivery_state_cache.update(delivery_state)
                     save_state(delivery_state)
                     add_log(f"[SosyalPazarSMM] ⏳ @{group} -> Katılım isteği gönderildi (onay bekleniyor).")
                 except UserAlreadyParticipantError:
                     pending_joins.discard(group.strip().lstrip("@").lower())
+                    record_group_status(delivery_state, group, "joined", "Hesap zaten gruba üye.")
+                    set_pending_join_requests(delivery_state, pending_joins)
+                    _delivery_state_cache.update(delivery_state)
+                    save_state(delivery_state)
                     add_log(f"[SosyalPazarSMM] ℹ️ Zaten grupta var: @{group}")
                 except FloodWaitError as exc:
                     delivery_state[JOIN_RESTRICTION_KEY] = time.time() + exc.seconds + 30
+                    record_group_status(
+                        delivery_state,
+                        group,
+                        "join_flood_wait",
+                        f"Telegram katılım limiti: {exc.seconds} saniye.",
+                        next_retry_at=delivery_state[JOIN_RESTRICTION_KEY],
+                    )
                     _delivery_state_cache.update(delivery_state)
                     save_state(delivery_state)
                     join_allowed = False
@@ -601,26 +761,44 @@ async def run_publisher():
                     if err_type in {"ValueError", "UsernameInvalidError", "UsernameNotOccupiedError", "ChannelPrivateError"}:
                         delivery_blacklist.add(group.strip().lstrip("@").lower())
                         set_permanent_blacklist(delivery_state, delivery_blacklist)
+                        record_group_status(
+                            delivery_state,
+                            group,
+                            "invalid_private",
+                            err_type,
+                            permanent=True,
+                        )
                         _delivery_state_cache.update(delivery_state)
                         save_state(delivery_state)
                         add_log(f"[SosyalPazarSMM] ⛔ @{group} erişilemez/geçersiz; kalıcı olarak atlandı.", "WARNING")
                     else:
+                        record_group_status(
+                            delivery_state,
+                            group,
+                            "join_error",
+                            err_type,
+                            next_retry_at=time.time() + 15 * 60,
+                        )
+                        _delivery_state_cache.update(delivery_state)
+                        save_state(delivery_state)
                         add_log(f"[SosyalPazarSMM] ❌ @{group} katılım hatası: {err_type}", "WARNING")
 
         await wait_for_blast_window(delivery_state)
         if not _bot_running:
             continue
-        
-        # 0. GET JOINED GROUPS
-        joined_usernames = set()
-        try:
-            async for dialog in client.iter_dialogs():
-                if dialog.is_channel or dialog.is_group:
-                    if getattr(dialog.entity, 'username', None):
-                        joined_usernames.add(dialog.entity.username.lower())
-                    joined_usernames.add(str(dialog.id))
-        except Exception as e:
-            add_log(f"[SosyalPazarSMM] Dialogs okuma hatasi: {e}", "WARNING")
+
+        # The account may have waited close to an hour. Refresh both current
+        # time and pending approvals so an approved group is not held for an
+        # additional full cycle.
+        now = time.time()
+        joined_usernames = await collect_joined_group_keys(client)
+        pending_joins, pending_changed = reconcile_pending_join_approvals(
+            delivery_state, pending_joins, joined_usernames
+        )
+        if pending_changed:
+            _delivery_state_cache.clear()
+            _delivery_state_cache.update(delivery_state)
+            save_state(delivery_state)
         
         # 1. SEND PHASE
         not_joined_groups = []
@@ -637,10 +815,21 @@ async def run_publisher():
                 add_log(f"[SosyalPazarSMM] ⏳ @{group} katılım isteği onay bekliyor, tekrar denenmiyor.")
                 continue
 
+            saved_group_status = group_statuses(delivery_state).get(group_key, {})
+            try:
+                next_retry_at = float(saved_group_status.get("next_retry_at") or 0)
+            except (TypeError, ValueError):
+                next_retry_at = 0
+            if next_retry_at > now:
+                remaining = int(next_retry_at - now)
+                add_log(f"[SosyalPazarSMM] ⏳ @{group} geçici beklemede: {remaining}sn.")
+                continue
+
             # Match Froxy's order: membership is checked before cooldown. A
             # stale delivery timestamp must never postpone joining a group.
             in_group = group.lower() in joined_usernames
             if not in_group:
+                record_group_status(delivery_state, group, "not_joined", "Hesap bu gruba henüz üye değil.")
                 add_log(f"[SosyalPazarSMM] ⚠️ @{group} henüz üye değiliz, katılım listesine eklendi.")
                 not_joined_groups.append(group)
                 continue
@@ -670,6 +859,7 @@ async def run_publisher():
                     pass
             
             if not in_group:
+                record_group_status(delivery_state, group, "not_joined", "Hesap bu gruba henüz üye değil.")
                 add_log(f"[SosyalPazarSMM] ⚠️ @{group} henüz üye değiliz, katılım listesine eklendi.")
                 not_joined_groups.append(group)
                 continue
@@ -680,6 +870,7 @@ async def run_publisher():
                 accepted_at = time.time()
                 delivery_state[group] = accepted_at
                 delivery_state[ACCOUNT_LAST_BLAST_KEY] = accepted_at
+                record_group_status(delivery_state, group, "sent", "Telegram mesajı kabul etti.")
                 _delivery_state_cache.update(delivery_state)
                 save_state(delivery_state)
                 status["sent"] += 1
@@ -692,11 +883,31 @@ async def run_publisher():
             except FloodWaitError as exc:
                 wait_sec = exc.seconds
                 status["last_error"] = f"FloodWait {wait_sec}s"
+                delivery_state[ACCOUNT_RESTRICTION_KEY] = time.time() + wait_sec + 2
+                record_group_status(
+                    delivery_state,
+                    group,
+                    "account_flood_wait",
+                    f"Telegram hesap limiti: {wait_sec} saniye.",
+                    next_retry_at=delivery_state[ACCOUNT_RESTRICTION_KEY],
+                )
+                _delivery_state_cache.update(delivery_state)
+                save_state(delivery_state)
                 add_log(f"[SosyalPazarSMM] ⏳ FloodWait {wait_sec}sn; hesap duraklatıldı.")
                 await asyncio.sleep(wait_sec + 2)
 
             except (PeerFloodError, UserRestrictedError) as e:
                 wait_sec = getattr(e, "seconds", 48 * 3600) or 48 * 3600
+                delivery_state[ACCOUNT_RESTRICTION_KEY] = time.time() + wait_sec + 2
+                record_group_status(
+                    delivery_state,
+                    group,
+                    "account_restricted",
+                    type(e).__name__,
+                    next_retry_at=delivery_state[ACCOUNT_RESTRICTION_KEY],
+                )
+                _delivery_state_cache.update(delivery_state)
+                save_state(delivery_state)
                 add_log(f"[SosyalPazarSMM] 🚫 Hesap kısıtlaması algılandı ({type(e).__name__}); {wait_sec}sn duraklatıldı.")
                 await asyncio.sleep(wait_sec + 2)
 
@@ -704,6 +915,7 @@ async def run_publisher():
                 add_log(f"[SosyalPazarSMM] ❌ @{group} -> Banlandık! (UserBannedInChannel)")
                 delivery_blacklist.add(group_key)
                 set_permanent_blacklist(delivery_state, delivery_blacklist)
+                record_group_status(delivery_state, group, "banned", "UserBannedInChannel", permanent=True)
                 _delivery_state_cache.update(delivery_state)
                 save_state(delivery_state)
 
@@ -711,29 +923,53 @@ async def run_publisher():
                 add_log(f"[SosyalPazarSMM] 🔒 @{group} -> Yazma izni yok! (ChatWriteForbidden)")
                 delivery_blacklist.add(group_key)
                 set_permanent_blacklist(delivery_state, delivery_blacklist)
+                record_group_status(delivery_state, group, "write_forbidden", "ChatWriteForbidden", permanent=True)
                 _delivery_state_cache.update(delivery_state)
                 save_state(delivery_state)
 
             except SlowModeWaitError as sme:
                 wait_sec = getattr(sme, "seconds", 60) or 60
-                delivery_state[group] = time.time() + wait_sec + 30
+                record_group_status(
+                    delivery_state,
+                    group,
+                    "slow_mode",
+                    f"SlowModeWaitError: {wait_sec} saniye.",
+                    next_retry_at=time.time() + wait_sec + 30,
+                )
                 _delivery_state_cache.update(delivery_state)
                 save_state(delivery_state)
                 add_log(f"[SosyalPazarSMM] 🐌 @{group} -> SlowMode aktif ({wait_sec}sn bekleme).")
                 await asyncio.sleep(wait_sec + 2)
 
-            except (UserNotParticipantError, ChannelPrivateError):
+            except (UserNotParticipantError, ChannelPrivateError) as exc:
+                record_group_status(
+                    delivery_state,
+                    group,
+                    "not_joined",
+                    type(exc).__name__,
+                    next_retry_at=time.time() + 15 * 60,
+                )
                 add_log(f"[SosyalPazarSMM] ⚠️ @{group} henüz üye değiliz, katılım listesine eklendi.")
                 not_joined_groups.append(group)
 
             except RPCError as exc:
                 err_name = type(exc).__name__
                 status["last_error"] = f"@{group}: {err_name}"
+                record_group_status(
+                    delivery_state, group, "send_error", err_name, next_retry_at=time.time() + 15 * 60
+                )
+                _delivery_state_cache.update(delivery_state)
+                save_state(delivery_state)
                 add_log(f"[SosyalPazarSMM] ❌ @{group} gonderilemedi: {err_name}", "WARNING")
 
             except Exception as exc:
                 err_name = type(exc).__name__
                 status["last_error"] = f"@{group}: {err_name}"
+                record_group_status(
+                    delivery_state, group, "send_error", err_name, next_retry_at=time.time() + 15 * 60
+                )
+                _delivery_state_cache.update(delivery_state)
+                save_state(delivery_state)
                 add_log(f"[SosyalPazarSMM] ❌ Hata @{group}: {err_name}", "ERROR")
 
             now = time.time()
@@ -760,10 +996,14 @@ async def run_publisher():
                     )
                     if is_invite_hash:
                         await client(ImportChatInviteRequest(group))
+                        record_group_status(delivery_state, group, "joined", "Özel gruba katılım başarılı.")
                         add_log(f"[SosyalPazarSMM] ✅ Özel gruba katıldı: @{group}")
                     else:
                         await client(JoinChannelRequest(group))
+                        record_group_status(delivery_state, group, "joined", "Gruba katılım başarılı.")
                         add_log(f"[SosyalPazarSMM] ✅ Gruba katıldı: @{group}")
+                    _delivery_state_cache.update(delivery_state)
+                    save_state(delivery_state)
                     successful_joins += 1
                     
                     wait_after_join = random.randint(45, 75)
@@ -773,14 +1013,28 @@ async def run_publisher():
                 except InviteRequestSentError:
                     pending_joins.add(group.strip().lstrip("@").lower())
                     set_pending_join_requests(delivery_state, pending_joins)
+                    record_group_status(
+                        delivery_state, group, "pending_approval", "Admin katılım onayı bekleniyor."
+                    )
                     _delivery_state_cache.update(delivery_state)
                     save_state(delivery_state)
                     add_log(f"[SosyalPazarSMM] ⏳ @{group} -> Katılım isteği gönderildi (onay bekleniyor).")
                 except UserAlreadyParticipantError:
                     pending_joins.discard(group.strip().lstrip("@").lower())
+                    set_pending_join_requests(delivery_state, pending_joins)
+                    record_group_status(delivery_state, group, "joined", "Hesap zaten gruba üye.")
+                    _delivery_state_cache.update(delivery_state)
+                    save_state(delivery_state)
                     add_log(f"[SosyalPazarSMM] ℹ️ Zaten grupta var: @{group}")
                 except FloodWaitError as exc:
                     delivery_state[JOIN_RESTRICTION_KEY] = time.time() + exc.seconds + 30
+                    record_group_status(
+                        delivery_state,
+                        group,
+                        "join_flood_wait",
+                        f"Telegram katılım limiti: {exc.seconds} saniye.",
+                        next_retry_at=delivery_state[JOIN_RESTRICTION_KEY],
+                    )
                     _delivery_state_cache.update(delivery_state)
                     save_state(delivery_state)
                     join_allowed = False
@@ -791,10 +1045,27 @@ async def run_publisher():
                     err_type = type(exc).__name__
                     if 'banned' in err_msg.lower() or 'UserBannedInChannel' in err_type:
                         add_log(f"[SosyalPazarSMM] ⛔ @{group} -> Bu hesap bu gruptan BANLANMIŞ. 24 saat denenmeyecek.")
-                        delivery_state[group] = time.time() + 86400
+                        record_group_status(
+                            delivery_state,
+                            group,
+                            "banned",
+                            err_type,
+                            permanent=True,
+                        )
+                        delivery_blacklist.add(group.strip().lstrip("@").lower())
+                        set_permanent_blacklist(delivery_state, delivery_blacklist)
                         _delivery_state_cache.update(delivery_state)
                         save_state(delivery_state)
                     else:
+                        record_group_status(
+                            delivery_state,
+                            group,
+                            "join_error",
+                            err_type,
+                            next_retry_at=time.time() + 15 * 60,
+                        )
+                        _delivery_state_cache.update(delivery_state)
+                        save_state(delivery_state)
                         add_log(f"[SosyalPazarSMM] ❌ @{group} katılım hatası: {err_type}", "WARNING")
 
         status["last_cycle"] = datetime.now(timezone.utc).isoformat()
@@ -817,7 +1088,7 @@ def background_runner():
 @app.get("/")
 def dashboard():
     try:
-        return render_template("index.html")
+        return render_template("index.html", groups=groups_from_env())
     except Exception as e:
         return jsonify({"error": str(e), "status": status})
 
@@ -829,7 +1100,9 @@ def health():
 
 @app.get("/api/status")
 def api_status():
-    return jsonify(status)
+    state = load_state()
+    _, summary = group_state_snapshot(state, groups_from_env())
+    return jsonify({**status, "group_summary": summary})
 
 
 @app.get("/api/logs")
@@ -847,8 +1120,12 @@ def api_logs():
 @app.get("/api/delivery_state")
 def api_delivery_state():
     state = load_state()
+    group_details, summary = group_state_snapshot(state, groups_from_env())
     _delivery_state_cache.update(state)
-    return jsonify(_delivery_state_cache)
+    response = dict(_delivery_state_cache)
+    response["__GROUP_STATUS__"] = group_details
+    response["__GROUP_SUMMARY__"] = summary
+    return jsonify(response)
 
 
 @app.route("/api/bot/start", methods=["POST"])
