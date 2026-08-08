@@ -30,6 +30,7 @@ from telethon.errors import (
 )
 from telethon.sessions import StringSession
 from telethon.tl.functions.channels import JoinChannelRequest
+from telethon.tl.functions.messages import ImportChatInviteRequest
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -51,7 +52,15 @@ ACCOUNT_LAST_BLAST_KEY = "__ACCOUNT_LAST_BLAST_TIME__"
 PERMANENT_BLACKLIST_KEY = "__PERMANENT_BLACKLIST__"
 JOIN_RESTRICTION_KEY = "__JOIN_RESTRICTION_UNTIL__"
 PENDING_JOIN_KEY = "__PENDING_JOIN_REQUESTS__"
-DISABLED_RENDER_HOST_MARKERS = ("smm-bot-1-w7pv",)
+# Do not infer that the active service is a duplicate from its hostname.  The
+# previous hard-coded marker matched the only SMM Render URL and disabled the
+# publisher immediately after startup.  A duplicate can be disabled
+# explicitly with SMM_DISABLE_RENDER_SERVICE=true instead.
+DISABLED_RENDER_HOST_MARKERS = tuple(
+    marker.strip().casefold()
+    for marker in os.environ.get("SMM_DISABLED_RENDER_HOST_MARKERS", "").split(",")
+    if marker.strip()
+)
 KEEPALIVE_INTERVAL_SECONDS = 300
 
 base_dir = os.path.abspath(os.path.dirname(__file__))
@@ -82,6 +91,10 @@ status = {
 
 def duplicate_render_service_disabled():
     """Keep the old duplicate Render service from opening Telegram sessions."""
+    if os.environ.get("SMM_DISABLE_RENDER_SERVICE", "").strip().casefold() in {
+        "1", "true", "yes", "on"
+    }:
+        return True
     render_values = (
         os.environ.get("RENDER_EXTERNAL_URL", ""),
         os.environ.get("RENDER_EXTERNAL_HOSTNAME", ""),
@@ -98,23 +111,25 @@ DEFAULT_SESSION = ""
 DEFAULT_MESSAGE = """🚀 SOSYALPAZAR SMM HİZMETLERİ 🚀
 
 🔥 INSTAGRAM
-• Genel Takipçi (1K): 27.41 TL
-• Türk Takipçi (1K): 241.38 TL
-• Beğeni Servisleri (1K): 3.19 TL'den başlayan
+• Türk Kadın Takipçi (1K): 223.50 TL (90 Gün Telafi)
+• Türk Takipçi (1K): 241.38 TL (30 Gün Telafi)
+• Türk Kadın Beğeni (1K): 95.44 TL (30 Gün Telafi)
+• Genel Beğeni (1K): 3.19 TL (30 Gün Telafi)
+• Türk kadın/özel yorum paketleri: DM'den seçenek ve garanti süresi
 
 🔥 TIKTOK
-• Takipçi (1K): 140.60 TL
-• Beğeni (1K): 13.25 TL | İzlenme (1K): 2.38 TL
+• Takipçi (1K): 146.33 TL (30 Gün Telafi)
+• Beğeni (1K): 13.25 TL (30 Gün Telafi)
+• İzlenme (1K): 2.38 TL (30 Gün Telafi)
 
 🔥 YOUTUBE
-• Abone (1K): 1.021 TL | Beğeni (1K): 64.97 TL
-• Türk İzlenme (1K): 107.45 TL
+• Abone (1K): 1.021,01 TL (30 Gün Telafi)
+• Beğeni (1K): 64.97 TL (30 Gün Telafi)
+• Türk İzlenme (1K): 107.45 TL (30 Gün Telafi)
+• İzlenme (1K): 71.58 TL (30 Gün Telafi)
 
-🔥 TELEGRAM & SPOTIFY
-• Telegram Üye (1K): 29.94 TL | Görüntülenme: 81 TL
-• Spotify Takipçi (1K): 13.69 TL
-
-⚡ 30 Gün Telafili & Şifresiz Hizmet
+⚡ Seçili servislerde minimum 30 gün telafi
+🔒 Şifresiz hizmet • Hızlı başlangıç • Güncel servis seçenekleri
 👉 Sipariş ve Detaylı Bilgi İçin DM: @SosyalPazarSMM"""
 
 DEFAULT_GROUPS = (
@@ -132,19 +147,22 @@ DEFAULT_GROUPS = (
 APPROVED_MESSAGE = (
     "🚀 SOSYALPAZAR SMM HİZMETLERİ 🚀\n\n"
     "🔥 INSTAGRAM\n"
-    "• Genel Takipçi (1K): 27.41 TL\n"
-    "• Türk Takipçi (1K): 241.38 TL\n"
-    "• Beğeni Servisleri (1K): 3.19 TL'den başlayan\n\n"
+    "• Türk Kadın Takipçi (1K): 223.50 TL (90 Gün Telafi)\n"
+    "• Türk Takipçi (1K): 241.38 TL (30 Gün Telafi)\n"
+    "• Türk Kadın Beğeni (1K): 95.44 TL (30 Gün Telafi)\n"
+    "• Genel Beğeni (1K): 3.19 TL (30 Gün Telafi)\n"
+    "• Türk kadın/özel yorum paketleri: DM'den seçenek ve garanti süresi\n\n"
     "🔥 TIKTOK\n"
-    "• Takipçi (1K): 140.60 TL\n"
-    "• Beğeni (1K): 13.25 TL | İzlenme (1K): 2.38 TL\n\n"
+    "• Takipçi (1K): 146.33 TL (30 Gün Telafi)\n"
+    "• Beğeni (1K): 13.25 TL (30 Gün Telafi)\n"
+    "• İzlenme (1K): 2.38 TL (30 Gün Telafi)\n\n"
     "🔥 YOUTUBE\n"
-    "• Abone (1K): 1.021 TL | Beğeni (1K): 64.97 TL\n"
-    "• Türk İzlenme (1K): 107.45 TL\n\n"
-    "🔥 TELEGRAM & SPOTIFY\n"
-    "• Telegram Üye (1K): 29.94 TL | Görüntülenme: 81 TL\n"
-    "• Spotify Takipçi (1K): 13.69 TL\n\n"
-    "⚡ 30 Gün Telafili & Şifresiz Hizmet\n"
+    "• Abone (1K): 1.021,01 TL (30 Gün Telafi)\n"
+    "• Beğeni (1K): 64.97 TL (30 Gün Telafi)\n"
+    "• Türk İzlenme (1K): 107.45 TL (30 Gün Telafi)\n"
+    "• İzlenme (1K): 71.58 TL (30 Gün Telafi)\n\n"
+    "⚡ Seçili servislerde minimum 30 gün telafi\n"
+    "🔒 Şifresiz hizmet • Hızlı başlangıç • Güncel servis seçenekleri\n"
     "👉 Sipariş ve Detaylı Bilgi İçin DM: @SosyalPazarSMM"
 )
 APPROVED_GROUPS = (
