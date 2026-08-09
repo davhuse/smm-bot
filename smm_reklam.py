@@ -112,8 +112,6 @@ def duplicate_render_service_disabled():
     return any(marker in joined for marker in DISABLED_RENDER_HOST_MARKERS)
 
 # ── Defaults ────────────────────────────────────────────────────────────────
-DEFAULT_API_ID = "31076280"
-DEFAULT_API_HASH = "7ba4072dcf0a05a7ccf80e570866b6d8"
 DEFAULT_SESSION = ""
 # No embedded StringSession: Render supplies it through the environment.
 DEFAULT_MESSAGE = """🚀 SOSYALPAZAR SMM HİZMETLERİ 🚀
@@ -148,7 +146,7 @@ DEFAULT_GROUPS = (
     "kodceksatismerkezi,ticaretyapn,kuponkodhesapilan,kodkuponmarketi,"
     "xalimsatiim,satiskodtakasi,kuponkodalimsatimm,ceksatkupon,"
     "kuponindirimpazari,zeroticaret,indirim363,ticaretgruptr,"
-    "kuponkodceksatis,kodindirimsatis,kuponkodualsat"
+    "kuponkodceksatis,kodindirimsatis,kuponkodualsat,KCy3-GcNhwQxYzk0"
 )
 
 # Owner-approved production copy and the same active group list used by the
@@ -185,7 +183,7 @@ APPROVED_GROUPS = (
     "kodceksatismerkezi,ticaretyapn,kuponkodhesapilan,kodkuponmarketi,"
     "xalimsatiim,satiskodtakasi,kuponkodalimsatimm,ceksatkupon,"
     "wishx_2,kuponindirimpazari,indirim363,ticaretgruptr"
-    ",kuponkodceksatis,kodindirimsatis,kuponkodualsat"
+    ",kuponkodceksatis,kodindirimsatis,kuponkodualsat,KCy3-GcNhwQxYzk0"
 )
 
 
@@ -218,8 +216,8 @@ def groups_from_env():
 import urllib.request
 import urllib.error
 
-FS_API_KEY = "AIzaSyCZz54GBF4nCgP84DsTSwwMyPq70Lb_Mjo"
-FS_PROJECT_ID = "bot-2-63772"
+FS_API_KEY = os.environ.get("FIREBASE_API_KEY", "").strip()
+FS_PROJECT_ID = os.environ.get("FIREBASE_PROJECT_ID", "bot-2-63772").strip()
 FS_BASE_URL = f"https://firestore.googleapis.com/v1/projects/{FS_PROJECT_ID}/databases/(default)/documents"
 
 def fs_get_state_smm():
@@ -594,8 +592,8 @@ async def run_publisher():
         )
         return
 
-    api_id = os.environ.get("TELEGRAM_API_ID", DEFAULT_API_ID).strip()
-    api_hash = os.environ.get("TELEGRAM_API_HASH", DEFAULT_API_HASH).strip()
+    api_id = os.environ.get("TELEGRAM_API_ID", "").strip()
+    api_hash = os.environ.get("TELEGRAM_API_HASH", "").strip()
     session = os.environ.get("SMM_STRING_SESSION", "").strip()
     message = os.environ.get("SMM_MESSAGE", APPROVED_MESSAGE).strip()
     groups = groups_from_env()
@@ -603,8 +601,12 @@ async def run_publisher():
     # per-group cooldown is also kept at this same one-hour interval.
     interval = BLAST_INTERVAL_SECONDS
 
-    if not session or not message or not groups:
+    if not api_id or not api_hash or not session or not message or not groups:
         missing = []
+        if not api_id:
+            missing.append("TELEGRAM_API_ID")
+        if not api_hash:
+            missing.append("TELEGRAM_API_HASH")
         if not session:
             missing.append("SMM_STRING_SESSION")
         if not message:
