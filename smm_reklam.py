@@ -152,25 +152,27 @@ DEFAULT_GROUPS = (
 # Owner-approved production copy and the same active group list used by the
 # Froxy publisher. Environment variables can override these values later.
 APPROVED_MESSAGE = (
-    "🚀 SOSYALPAZAR SMM HİZMETLERİ 🚀\n\n"
+    "🚀 SOSYALPAZAR SMM HİZMETLERİ 🚀\n"
+    "Hızlı başlangıç • Şifresiz sipariş • Seçili servislerde telafi\n\n"
     "🔥 INSTAGRAM\n"
-    "• Türk Kadın Takipçi (1K): 223.50 TL (90 Gün Telafi)\n"
-    "• Türk Takipçi (1K): 241.38 TL (30 Gün Telafi)\n"
-    "• Türk Kadın Beğeni (1K): 95.44 TL (30 Gün Telafi)\n"
-    "• Genel Beğeni (1K): 3.19 TL (30 Gün Telafi)\n"
-    "• Türk kadın/özel yorum paketleri: DM'den seçenek ve garanti süresi\n\n"
+    "• Türk Kadın Takipçi (1K) — 223,50 TL\n  └ 90 Gün Telafi\n"
+    "• Türk Takipçi (1K) — 241,38 TL\n  └ 30 Gün Telafi\n"
+    "• Türk Kadın Beğeni (1K) — 95,44 TL\n  └ 30 Gün Telafi\n"
+    "• Genel Beğeni (1K) — 3,19 TL’den başlayan\n"
+    "• Türk kadın yorum / özel yorum paketleri mevcut\n\n"
     "🔥 TIKTOK\n"
-    "• Takipçi (1K): 146.33 TL (30 Gün Telafi)\n"
-    "• Beğeni (1K): 13.25 TL (30 Gün Telafi)\n"
-    "• İzlenme (1K): 2.38 TL (30 Gün Telafi)\n\n"
+    "• Takipçi (1K) — 146,33 TL\n• Beğeni (1K) — 13,25 TL\n• İzlenme (1K) — 2,38 TL\n"
+    "└ Seçili paketlerde 30 Gün Telafi\n\n"
     "🔥 YOUTUBE\n"
-    "• Abone (1K): 1.021,01 TL (30 Gün Telafi)\n"
-    "• Beğeni (1K): 64.97 TL (30 Gün Telafi)\n"
-    "• Türk İzlenme (1K): 107.45 TL (30 Gün Telafi)\n"
-    "• İzlenme (1K): 71.58 TL (30 Gün Telafi)\n\n"
-    "⚡ Seçili servislerde minimum 30 gün telafi\n"
-    "🔒 Şifresiz hizmet • Hızlı başlangıç • Güncel servis seçenekleri\n"
-    "👉 Sipariş ve Detaylı Bilgi İçin DM: @SosyalPazarSMM"
+    "• Abone (1K) — 1.021,01 TL\n• Beğeni (1K) — 64,97 TL\n"
+    "• Türk İzlenme (1K) — 107,45 TL\n• Genel İzlenme (1K) — 71,58 TL\n"
+    "└ Seçili paketlerde 30 Gün Telafi\n\n"
+    "🔥 DİĞER HİZMETLER\n"
+    "• Telegram üye / görüntülenme\n• Spotify takipçi / dinlenme\n"
+    "• X, Facebook ve özel paketler\n└ Fiyat ve uygun servis için DM\n\n"
+    "⚡ Sipariş öncesi linkinizi ve istediğiniz adedi yazın;\n"
+    "en uygun, telafili paketi birlikte seçelim.\n\n"
+    "👉 Sipariş & detay: @SosyalPazarSMM"
 )
 APPROVED_GROUPS = (
     "TicaretGrubuuu,kuponindirimsatis,zeroticaret,tahaaslan11,"
@@ -945,7 +947,7 @@ async def run_publisher():
                 _delivery_state_cache.update(delivery_state)
                 save_state(delivery_state)
                 add_log(f"[SosyalPazarSMM] ⏳ FloodWait {wait_sec}sn; hesap duraklatıldı.")
-                await asyncio.sleep(wait_sec + 2)
+                break
 
             except (PeerFloodError, UserRestrictedError) as e:
                 wait_sec = getattr(e, "seconds", 48 * 3600) or 48 * 3600
@@ -960,7 +962,7 @@ async def run_publisher():
                 _delivery_state_cache.update(delivery_state)
                 save_state(delivery_state)
                 add_log(f"[SosyalPazarSMM] 🚫 Hesap kısıtlaması algılandı ({type(e).__name__}); {wait_sec}sn duraklatıldı.")
-                await asyncio.sleep(wait_sec + 2)
+                break
 
             except UserBannedInChannelError:
                 add_log(f"[SosyalPazarSMM] ❌ @{group} -> Banlandık! (UserBannedInChannel)")
@@ -989,8 +991,7 @@ async def run_publisher():
                 )
                 _delivery_state_cache.update(delivery_state)
                 save_state(delivery_state)
-                add_log(f"[SosyalPazarSMM] 🐌 @{group} -> SlowMode aktif ({wait_sec}sn bekleme).")
-                await asyncio.sleep(wait_sec + 2)
+                add_log(f"[SosyalPazarSMM] 🐌 @{group} -> SlowMode aktif; grup beklemede, diğer gruplara devam ediliyor.")
 
             except (UserNotParticipantError, ChannelPrivateError) as exc:
                 record_group_status(
