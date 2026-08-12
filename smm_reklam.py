@@ -175,17 +175,17 @@ APPROVED_MESSAGE = (
     "👉 Sipariş & detay: @SosyalPazarSMM"
 )
 APPROVED_GROUPS = (
-    "TicaretGrubuuu,kuponindirimsatis,zeroticaret,tahaaslan11,"
-    "alimsatimmerkezii,sosyalmedyaalimsatimticaret,kuponsatisgrup,"
-    "kuponcekkodsatis,referanslinkpaylasimigrup,kuponsatislari0,"
-    "YuceKuponSatis,letgoilanlari,-3608209943,kuponhesapsatis,"
-    "kuponvekodsatisgrubu,indirimkodusatis,mukyemek,kupongrupta,"
-    "kuponkodindirimilanlar,Kuponcekm,satcek,kuponsat,ceksat,"
-    "ticaretcanavari,alsatticarettz,ticaretforumofficial,"
-    "kodceksatismerkezi,ticaretyapn,kuponkodhesapilan,kodkuponmarketi,"
-    "xalimsatiim,satiskodtakasi,kuponkodalimsatimm,ceksatkupon,"
-    "wishx_2,kuponindirimpazari,indirim363,ticaretgruptr"
-    ",kuponkodceksatis,kodindirimsatis,kuponkodualsat"
+    "kuponindirimsatis,satcek,kuponsat,ceksat,ticaretcanavari,"
+    "alsatticarettz,letgoilanlari,kuponhesapsatis,kuponsatisgrup,"
+    "kuponcekkodsatis,tahaaslan11,indirimkodusatis,alimsatimmerkezii,"
+    "ticaretforumofficial,kuponsatislari0,yucekuponsatis,kupongrupta,"
+    "kuponkodindirimilanlar,Kuponcekm,kodceksatismerkezi,ticaretyapn,"
+    "kuponkodhesapilan,kodkuponmarketi,xalimsatiim,satiskodtakasi,"
+    "kuponkodalimsatimm,ceksatkupon,wishx_2,kuponindirimpazari,"
+    "zeroticaret,indirim363,ticaretgruptr,kuponkodceksatis,"
+    "kodindirimsatis,kuponkodualsat,ceksatistakasgrup,mukyemek,"
+    "ticaretZ,kuponvekodsatisgrubu,ceksatkupon2,kuponkodalimsatim,"
+    "kodmalf,indirimruzgari1,kuponindirimkodalisveris"
 )
 
 
