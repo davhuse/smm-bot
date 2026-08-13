@@ -185,7 +185,8 @@ APPROVED_GROUPS = (
     "zeroticaret,indirim363,ticaretgruptr,kuponkodceksatis,"
     "kodindirimsatis,kuponkodualsat,ceksatistakasgrup,mukyemek,"
     "ticaretZ,kuponvekodsatisgrubu,ceksatkupon2,kuponkodalimsatim,"
-    "kodmalf,indirimruzgari1,kuponindirimkodalisveris"
+    "kodmalf,indirimruzgari1,kuponindirimkodalisveris,"
+    "alisverisforumuguncel,kuponindirimcek"
 )
 
 
