@@ -148,7 +148,8 @@ DEFAULT_GROUPS = (
     "kuponindirimpazari,zeroticaret,indirim363,ticaretgruptr,"
     "kuponkodceksatis,kodindirimsatis,kuponkodualsat,kodpazari,YemekSepetiKuponu,"
     "kodalimsatim,kuponalsatgurup,KodKuponMerkezi,kuponkodmerkez,"
-    "indirimkana,herkesibeklerimm,bedavainternetkodalimsatim"
+    "indirimkana,herkesibeklerimm,bedavainternetkodalimsatim,kuponyaticaret,"
+    "cek_kupon_kod_ilan,Minakuponkodsatis,bedavainternetkod"
 )
 
 # Owner-approved production copy and the same active group list used by the
@@ -190,7 +191,8 @@ APPROVED_GROUPS = (
     "kodmalf,indirimruzgari1,kuponindirimkodalisveris,"
     "alisverisforumuguncel,kuponindirimcek,kodpazari,YemekSepetiKuponu,"
     "kodalimsatim,kuponalsatgurup,KodKuponMerkezi,kuponkodmerkez,"
-    "indirimkana,herkesibeklerimm,bedavainternetkodalimsatim"
+    "indirimkana,herkesibeklerimm,bedavainternetkodalimsatim,kuponyaticaret,"
+    "cek_kupon_kod_ilan,Minakuponkodsatis,bedavainternetkod"
 )
 
 
