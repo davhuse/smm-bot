@@ -442,7 +442,12 @@ def migrate_legacy_blacklist_statuses(state):
     blacklist = permanent_blacklist(state)
     statuses = group_statuses(state)
     for group in list(blacklist):
-        if group not in statuses:
+        row = statuses.get(group, {})
+        legacy_unknown = (
+            isinstance(row, dict)
+            and row.get("status") == "legacy_unknown"
+        )
+        if group not in statuses or legacy_unknown:
             record_group_status(
                 state,
                 group,
