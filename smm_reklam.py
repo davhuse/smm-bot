@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import random
+import re
 import sys
 import time
 import urllib.request
@@ -29,8 +30,9 @@ from telethon.errors import (
     UserRestrictedError,
 )
 from telethon.sessions import StringSession
-from telethon.tl.functions.channels import JoinChannelRequest
+from telethon.tl.functions.channels import GetParticipantRequest, JoinChannelRequest
 from telethon.tl.functions.messages import ImportChatInviteRequest
+from shared_targets import shared_approved_groups
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -48,6 +50,12 @@ MAX_PERSISTED_COOLDOWN_SECONDS = 60 * 60
 BLAST_INTERVAL_SECONDS = 60 * 60
 INTER_GROUP_DELAY_MIN = 20
 INTER_GROUP_DELAY_MAX = 45
+JOIN_BATCH_LIMIT = max(1, int(os.environ.get("SMM_JOIN_BATCH_LIMIT", "20") or 20))
+JOIN_DELAY_MIN = max(15, int(os.environ.get("SMM_JOIN_DELAY_MIN", "15") or 15))
+JOIN_DELAY_MAX = max(
+    JOIN_DELAY_MIN,
+    int(os.environ.get("SMM_JOIN_DELAY_MAX", "30") or 30),
+)
 ACCOUNT_LAST_BLAST_KEY = "__ACCOUNT_LAST_BLAST_TIME__"
 PERMANENT_BLACKLIST_KEY = "__PERMANENT_BLACKLIST__"
 JOIN_RESTRICTION_KEY = "__JOIN_RESTRICTION_UNTIL__"
@@ -139,17 +147,24 @@ DEFAULT_MESSAGE = """🚀 SOSYALPAZAR SMM HİZMETLERİ 🚀
 👉 Sipariş ve Detaylı Bilgi İçin DM: @SosyalPazarSMM"""
 
 DEFAULT_GROUPS = (
-    "kuponindirimsatis,satcek,kuponsat,ceksat,ticaretcanavari,alsatticarettz,"
-    "letgoilanlari,kuponhesapsatis,kuponsatisgrup,kuponcekkodsatis,"
-    "indirimkodusatis,alimsatimmerkezii,ticaretforumofficial,kuponsatislari0,"
-    "yucekuponsatis,kupongrupta,kuponkodindirimilanlar,Kuponcekm,"
+    "TicaretGrubuuu,kuponindirimsatis,zeroticaret,tahaaslan11,"
+    "alimsatimmerkezii,sosyalmedyaalimsatimticaret,kuponsatisgrup,"
+    "kuponcekkodsatis,referanslinkpaylasimigrup,kuponsatislari0,"
+    "YuceKuponSatis,letgoilanlari,-3608209943,kuponhesapsatis,"
+    "kuponvekodsatisgrubu,indirimkodusatis,mukyemek,kupongrupta,"
+    "kuponkodindirimilanlar,Kuponcekm,satcek,kuponsat,ceksat,"
+    "ticaretcanavari,alsatticarettz,indirim_kodu,kuponkodsatisgrup,"
     "kodceksatismerkezi,ticaretyapn,kuponkodhesapilan,kodkuponmarketi,"
-    "xalimsatiim,satiskodtakasi,kuponkodalimsatimm,ceksatkupon,"
-    "kuponindirimpazari,zeroticaret,indirim363,ticaretgruptr,"
-    "kuponkodceksatis,kodindirimsatis,kuponkodualsat,kodpazari,YemekSepetiKuponu,"
-    "kodalimsatim,kuponalsatgurup,KodKuponMerkezi,kuponkodmerkez,"
-    "indirimkana,herkesibeklerimm,bedavainternetkodalimsatim,kuponyaticaret,"
-    "cek_kupon_kod_ilan,Minakuponkodsatis,bedavainternetkod"
+    "xalimsatiim,satiskodtakasi,kuponkodalimsatimm,ceksatkupon,wishx_2,"
+    "kuponindirimpazari,indirim363,ticaretgruptr,kuponkodceksatis,"
+    "kodindirimsatis,kuponkodualsat,ceksatistakasgrup,ticaretZ,"
+    "ceksatkupon2,kuponkodalimsatim,kodmalf,indirimruzgari1,"
+    "kuponindirimkodalisveris,alisverisforumuguncel,kuponindirimcek,"
+    "uygunkod,kodpazari,YemekSepetiKuponu,kodalimsatim,kuponalsatgurup,"
+    "KodKuponMerkezi,kuponkodmerkez,indirimkana,herkesibeklerimm,"
+    "bedavainternetkodalimsatim,kuponyaticaret,cek_kupon_kod_ilan,"
+    "Minakuponkodsatis,bedavainternetkod,indirimcek,kuponindirimlisatis,"
+    "kuponceking,kuponinternet,kuponsatimalim"
 )
 
 # Owner-approved production copy and the same active group list used by the
@@ -177,23 +192,10 @@ APPROVED_MESSAGE = (
     "en uygun, telafili paketi birlikte seçelim.\n\n"
     "👉 Sipariş & detay: @SosyalPazarSMM"
 )
-APPROVED_GROUPS = (
-    "kuponindirimsatis,satcek,kuponsat,ceksat,ticaretcanavari,"
-    "alsatticarettz,letgoilanlari,kuponhesapsatis,kuponsatisgrup,"
-    "kuponcekkodsatis,tahaaslan11,indirimkodusatis,alimsatimmerkezii,"
-    "ticaretforumofficial,kuponsatislari0,yucekuponsatis,kupongrupta,"
-    "kuponkodindirimilanlar,Kuponcekm,kodceksatismerkezi,ticaretyapn,"
-    "kuponkodhesapilan,kodkuponmarketi,xalimsatiim,satiskodtakasi,"
-    "kuponkodalimsatimm,ceksatkupon,wishx_2,kuponindirimpazari,"
-    "zeroticaret,indirim363,ticaretgruptr,kuponkodceksatis,"
-    "kodindirimsatis,kuponkodualsat,ceksatistakasgrup,mukyemek,"
-    "ticaretZ,kuponvekodsatisgrubu,ceksatkupon2,kuponkodalimsatim,"
-    "kodmalf,indirimruzgari1,kuponindirimkodalisveris,"
-    "alisverisforumuguncel,kuponindirimcek,kodpazari,YemekSepetiKuponu,"
-    "kodalimsatim,kuponalsatgurup,KodKuponMerkezi,kuponkodmerkez,"
-    "indirimkana,herkesibeklerimm,bedavainternetkodalimsatim,kuponyaticaret,"
-    "cek_kupon_kod_ilan,Minakuponkodsatis,bedavainternetkod"
-)
+# Keep the SMM publisher on the same approved target set as the main
+# publisher.  Environment/Firestore targets remain additive in
+# ``groups_from_env`` below.
+APPROVED_GROUPS = DEFAULT_GROUPS
 
 
 # ── Logging helper ──────────────────────────────────────────────────────────
@@ -218,8 +220,13 @@ def add_log(msg, level="INFO"):
 def groups_from_env():
     # Always include the full Froxy-approved list; an environment value may
     # add extra groups but cannot silently shrink it back to the old 18.
-    raw = ",".join(filter(None, (APPROVED_GROUPS, os.environ.get("SMM_TARGET_GROUPS", ""))))
-    return list(dict.fromkeys(item.strip().lstrip("@") for item in raw.split(",") if item.strip()))
+    dynamic = ",".join(sorted(shared_approved_groups()))
+    raw = ",".join(filter(None, (
+        APPROVED_GROUPS, os.environ.get("SMM_TARGET_GROUPS", ""), dynamic,
+    )))
+    return list(dict.fromkeys(
+        item.strip().lstrip("@").lower() for item in raw.split(",") if item.strip()
+    ))
 
 
 import urllib.request
@@ -328,6 +335,46 @@ def group_key(value):
     return str(value or "").strip().lstrip("@").lower()
 
 
+def telegram_target_reference(value):
+    """Normalize legacy numeric Telegram targets before resolving them."""
+    normalized = group_key(value)
+    if not re.fullmatch(r"-?\d+", normalized):
+        return normalized
+    numeric = int(normalized)
+    # Older target files stored channel IDs as ``-<id>`` instead of Telegram's
+    # canonical ``-100<id>`` dialog reference.
+    if numeric < -(2 ** 31) and not normalized.startswith("-100"):
+        return int(f"-100{abs(numeric)}")
+    return numeric
+
+
+def target_match_keys(value):
+    """Return all stable spellings used for a public or numeric target."""
+    normalized = group_key(value)
+    keys = {normalized}
+    if not re.fullmatch(r"-?\d+", normalized):
+        return keys
+    reference = telegram_target_reference(normalized)
+    keys.add(str(reference))
+    if isinstance(reference, int) and str(reference).startswith("-100"):
+        keys.add(str(reference)[4:])
+    return keys
+
+
+def target_is_joined(group, joined_keys):
+    return bool(target_match_keys(group).intersection(joined_keys))
+
+
+async def resolve_group_entity(client, group):
+    """Resolve usernames and legacy numeric IDs through one path."""
+    reference = telegram_target_reference(group)
+    try:
+        return await client.get_entity(reference)
+    except Exception:
+        # Keep the original spelling as a fallback for unusual Telegram peers.
+        return await client.get_entity(group)
+
+
 def group_statuses(state):
     value = state.get(GROUP_STATUS_KEY)
     if not isinstance(value, dict):
@@ -362,21 +409,71 @@ def record_group_status(
     }
 
 
+async def inspect_write_forbidden(client, group):
+    """Inspect a denial and return a temporary, explainable retry decision."""
+    detail = {"scope": "unknown", "reason": "ChatWriteForbidden", "retry_seconds": 86400}
+    try:
+        entity = await resolve_group_entity(client, group)
+        defaults = getattr(entity, "default_banned_rights", None)
+        if defaults and getattr(defaults, "send_messages", False):
+            detail.update(scope="group_default", reason="GroupDefaultWriteForbidden", retry_seconds=21600)
+        participant = (await client(GetParticipantRequest(entity, "me"))).participant
+        banned = getattr(participant, "banned_rights", None)
+        if banned and getattr(banned, "send_messages", False):
+            until = getattr(banned, "until_date", None)
+            detail.update(scope="account", reason="AccountWriteRestricted")
+            if isinstance(until, datetime):
+                if until.tzinfo is None:
+                    until = until.replace(tzinfo=timezone.utc)
+                detail["retry_seconds"] = max(
+                    300, int((until - datetime.now(timezone.utc)).total_seconds()) + 60
+                )
+                detail["until"] = until.isoformat()
+            else:
+                detail["reason"] = "AccountWriteRestrictedNoExpiry"
+    except Exception as exc:
+        detail["inspection_error"] = type(exc).__name__
+    return detail
+
+
 def migrate_legacy_blacklist_statuses(state):
-    """Make old blacklist entries visible without retrying them automatically."""
+    """Re-open ambiguous legacy blocks and preserve explicit new decisions."""
     changed = False
+    blacklist = permanent_blacklist(state)
     statuses = group_statuses(state)
-    for group in permanent_blacklist(state):
+    for group in list(blacklist):
         if group not in statuses:
             record_group_status(
                 state,
                 group,
-                "legacy_unknown",
-                "Eski kalıcı kayıt: ilk hata nedeni kaydedilmemiş.",
-                permanent=True,
+                "legacy_review",
+                "Eski kalıcı kayıt yeniden doğrulanacak.",
+                permanent=False,
                 attempted_at=time.time(),
             )
+            blacklist.discard(group)
             changed = True
+    if changed:
+        set_permanent_blacklist(state, blacklist)
+    return changed
+
+
+def reopen_legacy_write_forbidden(state):
+    """Undo old permanent decisions that were based only on ambiguous write denial."""
+    blacklist = permanent_blacklist(state)
+    changed = False
+    for group, row in list(group_statuses(state).items()):
+        if not isinstance(row, dict):
+            continue
+        if row.get("status") == "write_forbidden" and row.get("reason") == "ChatWriteForbidden":
+            blacklist.discard(group)
+            record_group_status(
+                state, group, "write_forbidden_review", "LegacyChatWriteForbidden",
+                permanent=False, next_retry_at=time.time() + 3600,
+            )
+            changed = True
+    if changed:
+        set_permanent_blacklist(state, blacklist)
     return changed
 
 
@@ -424,8 +521,9 @@ async def collect_joined_group_keys(client):
             if dialog.is_channel or dialog.is_group:
                 username = getattr(dialog.entity, "username", None)
                 if username:
-                    joined.add(username.lower())
-                joined.add(str(dialog.id))
+                    joined.update(target_match_keys(username))
+                joined.update(target_match_keys(dialog.id))
+                joined.update(target_match_keys(getattr(dialog.entity, "id", None)))
     except Exception as exc:
         add_log(f"[SosyalPazarSMM] Diyaloglar okunamadı: {type(exc).__name__}", "WARNING")
     return joined
@@ -669,6 +767,8 @@ async def run_publisher():
             continue
 
         status["state"] = "running"
+        groups = groups_from_env()
+        status["total_groups"] = len(groups)
         delivery_state = load_state()
         _delivery_state_cache.update(delivery_state)
         now = time.time()
@@ -704,6 +804,11 @@ async def run_publisher():
             _delivery_state_cache.update(delivery_state)
             save_state(delivery_state)
             add_log("[SosyalPazarSMM] Eski kara liste kayıtları neden bilgisiyle işaretlendi.")
+        if reopen_legacy_write_forbidden(delivery_state):
+            _delivery_state_cache.clear()
+            _delivery_state_cache.update(delivery_state)
+            save_state(delivery_state)
+            add_log("[SosyalPazarSMM] Eski ChatWriteForbidden kayıtları inceleme için yeniden açıldı.")
 
         delivery_blacklist = permanent_blacklist(delivery_state)
         pending_joins = pending_join_requests(delivery_state)
@@ -734,8 +839,8 @@ async def run_publisher():
 
         # Join missing targets before the blast cooldown.  This keeps the
         # membership phase from being hidden behind a 60-minute account wait
-        # after a restart, while the five-group cap matches Froxy's
-        # anti-spam behaviour.  Groups with a pending admin approval are
+        # after a restart, while the bounded join batch matches the main
+        # publisher's anti-spam behaviour. Groups with a pending admin approval are
         # reported and will not be retried in this pass.
         preflight_joined = await collect_joined_group_keys(client)
         pending_joins, pending_changed = reconcile_pending_join_approvals(
@@ -750,21 +855,21 @@ async def run_publisher():
             group for group in groups
             if group.strip().lstrip("@").lower() not in delivery_blacklist
             and group.strip().lstrip("@").lower() not in pending_joins
-            and group.strip().lstrip("@").lower() not in preflight_joined
+            and not target_is_joined(group, preflight_joined)
         ]
         if preflight_missing and _bot_running and not join_allowed:
             remaining = max(0, int(join_restricted_until - time.time()))
             add_log(
                 f"[SosyalPazarSMM] Join flood koruması aktif; katılım {remaining}sn sonra tekrar denenecek."
             )
+        successful_preflight_joins = 0
         if preflight_missing and _bot_running and join_allowed:
             add_log(
                 f"[SosyalPazarSMM] 🔍 {len(preflight_missing)} gruba henüz üye değiliz. "
                 "Katılma ön aşaması başlıyor..."
             )
-            successful_preflight_joins = 0
             for group in preflight_missing:
-                if successful_preflight_joins >= 5:
+                if successful_preflight_joins >= JOIN_BATCH_LIMIT:
                     break
                 if not _bot_running:
                     break
@@ -779,13 +884,14 @@ async def run_publisher():
                     if is_invite_hash:
                         await client(ImportChatInviteRequest(group))
                     else:
-                        await client(JoinChannelRequest(group))
+                        entity = await resolve_group_entity(client, group)
+                        await client(JoinChannelRequest(entity))
                     record_group_status(delivery_state, group, "joined", "Katılım başarılı.")
                     _delivery_state_cache.update(delivery_state)
                     save_state(delivery_state)
                     add_log(f"[SosyalPazarSMM] ✅ Katılım başarılı: @{group}")
                     successful_preflight_joins += 1
-                    await asyncio.sleep(random.randint(45, 75))
+                    await asyncio.sleep(random.randint(JOIN_DELAY_MIN, JOIN_DELAY_MAX))
                 except InviteRequestSentError:
                     pending_joins.add(group.strip().lstrip("@").lower())
                     set_pending_join_requests(delivery_state, pending_joins)
@@ -841,8 +947,9 @@ async def run_publisher():
                         )
                         _delivery_state_cache.update(delivery_state)
                         save_state(delivery_state)
-                        add_log(f"[SosyalPazarSMM] ❌ @{group} katılım hatası: {err_type}", "WARNING")
+                    add_log(f"[SosyalPazarSMM] ❌ @{group} katılım hatası: {err_type}", "WARNING")
 
+        join_budget_remaining = max(0, JOIN_BATCH_LIMIT - successful_preflight_joins)
         await wait_for_blast_window(delivery_state)
         if not _bot_running:
             continue
@@ -887,7 +994,7 @@ async def run_publisher():
 
             # Match Froxy's order: membership is checked before cooldown. A
             # stale delivery timestamp must never postpone joining a group.
-            in_group = group.lower() in joined_usernames
+            in_group = target_is_joined(group, joined_usernames)
             if not in_group:
                 record_group_status(delivery_state, group, "not_joined", "Hesap bu gruba henüz üye değil.")
                 add_log(f"[SosyalPazarSMM] ⚠️ @{group} henüz üye değiliz, katılım listesine eklendi.")
@@ -907,12 +1014,12 @@ async def run_publisher():
             status["progress"] = int(((idx + 1) / len(groups)) * 100)
 
             # Check if we are actually in the group before trying to send.
-            in_group = group.lower() in joined_usernames
+            in_group = target_is_joined(group, joined_usernames)
             if not in_group:
                 # Fallback: Sometimes iter_dialogs misses newly joined groups.
                 # Try getting entity, if it throws UserNotParticipant, then we are really not in it.
                 try:
-                    ent = await client.get_entity(group)
+                    ent = await resolve_group_entity(client, group)
                     # If we got here and didn't crash, we might be able to send. Let's try.
                     in_group = True
                 except:
@@ -925,7 +1032,7 @@ async def run_publisher():
                 continue
 
             try:
-                entity = await client.get_entity(group)
+                entity = await resolve_group_entity(client, group)
                 await client.send_message(entity, message, link_preview=False)
                 accepted_at = time.time()
                 delivery_state[group] = accepted_at
@@ -980,10 +1087,16 @@ async def run_publisher():
                 save_state(delivery_state)
 
             except ChatWriteForbiddenError:
-                add_log(f"[SosyalPazarSMM] 🔒 @{group} -> Yazma izni yok! (ChatWriteForbidden)")
-                delivery_blacklist.add(group_key)
-                set_permanent_blacklist(delivery_state, delivery_blacklist)
-                record_group_status(delivery_state, group, "write_forbidden", "ChatWriteForbidden", permanent=True)
+                detail = await inspect_write_forbidden(client, group)
+                retry_at = time.time() + detail["retry_seconds"]
+                add_log(
+                    f"[SosyalPazarSMM] 🔒 @{group} -> Yazma reddedildi; "
+                    f"{detail['scope']} / {detail['reason']}, geçici inceleme."
+                )
+                record_group_status(
+                    delivery_state, group, "write_forbidden", detail["reason"],
+                    permanent=False, next_retry_at=retry_at,
+                )
                 _delivery_state_cache.update(delivery_state)
                 save_state(delivery_state)
 
@@ -1034,14 +1147,14 @@ async def run_publisher():
             now = time.time()
 
         # 2. JOIN PHASE
-        if not_joined_groups and _bot_running and join_allowed:
+        if not_joined_groups and _bot_running and join_allowed and join_budget_remaining:
             add_log(f"\n[SosyalPazarSMM] 🔍 {len(not_joined_groups)} gruba henüz üye değiliz. Katılma başlıyor...")
-            # Froxy ile aynı güvenli katılım limiti: tur başına en fazla 5
-            # başarılı katılım. Geçersiz veya onay bekleyen bir grup bu
+            # Ana yayıncı ile aynı güvenli katılım limiti: tur başına en fazla
+            # JOIN_BATCH_LIMIT başarılı katılım. Geçersiz veya onay bekleyen bir grup bu
             # kotayı tüketmemeli.
             successful_joins = 0
             for group in not_joined_groups:
-                if successful_joins >= 5:
+                if successful_joins >= join_budget_remaining:
                     break
                 if not _bot_running:
                     break
@@ -1058,14 +1171,15 @@ async def run_publisher():
                         record_group_status(delivery_state, group, "joined", "Özel gruba katılım başarılı.")
                         add_log(f"[SosyalPazarSMM] ✅ Özel gruba katıldı: @{group}")
                     else:
-                        await client(JoinChannelRequest(group))
+                        entity = await resolve_group_entity(client, group)
+                        await client(JoinChannelRequest(entity))
                         record_group_status(delivery_state, group, "joined", "Gruba katılım başarılı.")
                         add_log(f"[SosyalPazarSMM] ✅ Gruba katıldı: @{group}")
                     _delivery_state_cache.update(delivery_state)
                     save_state(delivery_state)
                     successful_joins += 1
                     
-                    wait_after_join = random.randint(45, 75)
+                    wait_after_join = random.randint(JOIN_DELAY_MIN, JOIN_DELAY_MAX)
                     add_log(f"[SosyalPazarSMM] 🛡️ Katılım sonrası anti-spam beklemesi: {wait_after_join}sn")
                     await asyncio.sleep(wait_after_join)
                     
