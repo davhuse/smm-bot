@@ -48,8 +48,18 @@ LOG_FILE = Path("smm_bot_log.txt")
 MIN_INTERVAL_SECONDS = 60 * 15
 MAX_PERSISTED_COOLDOWN_SECONDS = 60 * 60
 BLAST_INTERVAL_SECONDS = 60 * 60
-INTER_GROUP_DELAY_MIN = 20
-INTER_GROUP_DELAY_MAX = 45
+INTER_GROUP_DELAY_MIN = max(
+    30,
+    int(os.environ.get("SMM_SEND_DELAY_MIN", "35") or 35),
+)
+INTER_GROUP_DELAY_MAX = max(
+    INTER_GROUP_DELAY_MIN,
+    int(os.environ.get("SMM_SEND_DELAY_MAX", "60") or 60),
+)
+FLOOD_WAIT_MARGIN_SECONDS = max(
+    5,
+    int(os.environ.get("SMM_FLOOD_WAIT_MARGIN_SECONDS", "15") or 15),
+)
 JOIN_BATCH_LIMIT = max(1, int(os.environ.get("SMM_JOIN_BATCH_LIMIT", "20") or 20))
 JOIN_DELAY_MIN = max(15, int(os.environ.get("SMM_JOIN_DELAY_MIN", "15") or 15))
 JOIN_DELAY_MAX = max(
@@ -57,6 +67,10 @@ JOIN_DELAY_MAX = max(
     int(os.environ.get("SMM_JOIN_DELAY_MAX", "30") or 30),
 )
 ACCOUNT_LAST_BLAST_KEY = "__ACCOUNT_LAST_BLAST_TIME__"
+BLAST_STATE_VERSION_KEY = "__BLAST_STATE_VERSION__"
+BLAST_STATE_VERSION = 2
+SEND_CYCLE_KEY = "__SEND_CYCLE_V2__"
+SEND_ROTATION_KEY = "__SEND_ROTATION_OFFSET__"
 PERMANENT_BLACKLIST_KEY = "__PERMANENT_BLACKLIST__"
 JOIN_RESTRICTION_KEY = "__JOIN_RESTRICTION_UNTIL__"
 PENDING_JOIN_KEY = "__PENDING_JOIN_REQUESTS__"
@@ -558,6 +572,79 @@ def last_blast_remaining(state, now=None):
     return max(0, int(BLAST_INTERVAL_SECONDS - (now - last)))
 
 
+def migrate_blast_completion_state(state):
+    """Discard the legacy per-message blast marker once.
+
+    Version 1 updated ACCOUNT_LAST_BLAST_KEY after every successful group. A
+    FloodWait therefore ended the pass and the next loop waited a full hour.
+    Version 2 writes that marker only when the complete target pass finishes.
+    """
+    try:
+        version = int(state.get(BLAST_STATE_VERSION_KEY, 0) or 0)
+    except (TypeError, ValueError):
+        version = 0
+    if version >= BLAST_STATE_VERSION:
+        return False
+    state.pop(ACCOUNT_LAST_BLAST_KEY, None)
+    state[BLAST_STATE_VERSION_KEY] = BLAST_STATE_VERSION
+    return True
+
+
+def finish_blast_cycle(state, interrupted, now=None):
+    """Record the hourly blast window only after a complete target pass."""
+    if interrupted:
+        return False
+    state[ACCOUNT_LAST_BLAST_KEY] = now or time.time()
+    return True
+
+
+def ensure_send_cycle(state, groups):
+    """Return a persistent ordered target pass and its resume position."""
+    targets = [str(group).strip() for group in groups if str(group).strip()]
+    cycle = state.get(SEND_CYCLE_KEY, {})
+    if isinstance(cycle, dict):
+        order = cycle.get("groups")
+        try:
+            next_index = int(cycle.get("next_index", 0) or 0)
+        except (TypeError, ValueError):
+            next_index = 0
+        if (
+            isinstance(order, list)
+            and sorted(item.casefold() for item in order)
+            == sorted(item.casefold() for item in targets)
+            and 0 <= next_index <= len(order)
+        ):
+            return order, next_index, False
+
+    try:
+        rotation = int(state.get(SEND_ROTATION_KEY, 0) or 0)
+    except (TypeError, ValueError):
+        rotation = 0
+    if targets:
+        rotation %= len(targets)
+        order = targets[rotation:] + targets[:rotation]
+    else:
+        order = []
+    state[SEND_CYCLE_KEY] = {"groups": order, "next_index": 0}
+    return order, 0, True
+
+
+def advance_send_cycle(state, next_index):
+    cycle = state.get(SEND_CYCLE_KEY)
+    if isinstance(cycle, dict):
+        cycle["next_index"] = max(0, int(next_index))
+
+
+def complete_send_cycle(state):
+    cycle = state.pop(SEND_CYCLE_KEY, {})
+    count = len(cycle.get("groups", [])) if isinstance(cycle, dict) else 0
+    try:
+        rotation = int(state.get(SEND_ROTATION_KEY, 0) or 0)
+    except (TypeError, ValueError):
+        rotation = 0
+    state[SEND_ROTATION_KEY] = (rotation + 1) % count if count else 0
+
+
 async def wait_for_blast_window(state):
     remaining = last_blast_remaining(state)
     if not remaining:
@@ -778,6 +865,15 @@ async def run_publisher():
         _delivery_state_cache.update(delivery_state)
         now = time.time()
 
+        if migrate_blast_completion_state(delivery_state):
+            _delivery_state_cache.clear()
+            _delivery_state_cache.update(delivery_state)
+            save_state(delivery_state)
+            add_log(
+                "[SosyalPazarSMM] Blast durumu v2'ye geçirildi; eski mesaj bazlı "
+                "1 saatlik bekleme temizlendi."
+            )
+
         # A previous duplicate service wrote timestamps several hours into the
         # future. Clamp those stale records to one normal cooldown window so a
         # group cannot remain blocked for 400+ minutes.
@@ -789,6 +885,9 @@ async def run_publisher():
                 PENDING_JOIN_KEY,
                 GROUP_STATUS_KEY,
                 ACCOUNT_RESTRICTION_KEY,
+                BLAST_STATE_VERSION_KEY,
+                SEND_CYCLE_KEY,
+                SEND_ROTATION_KEY,
             }:
                 continue
             try:
@@ -974,9 +1073,19 @@ async def run_publisher():
         
         # 1. SEND PHASE
         not_joined_groups = []
+        send_cycle_interrupted = False
+        cycle_groups, cycle_start_index, cycle_created = ensure_send_cycle(
+            delivery_state, groups
+        )
+        if cycle_created:
+            _delivery_state_cache.clear()
+            _delivery_state_cache.update(delivery_state)
+            save_state(delivery_state)
 
-        for idx, group in enumerate(groups):
+        for idx in range(cycle_start_index, len(cycle_groups)):
+            group = cycle_groups[idx]
             if not _bot_running:
+                send_cycle_interrupted = True
                 break
 
             group_key = group.strip().lstrip("@").lower()
@@ -1016,7 +1125,7 @@ async def run_publisher():
                 continue
 
             status["current_group"] = group
-            status["progress"] = int(((idx + 1) / len(groups)) * 100)
+            status["progress"] = int(((idx + 1) / len(cycle_groups)) * 100)
 
             # Check if we are actually in the group before trying to send.
             in_group = target_is_joined(group, joined_usernames)
@@ -1041,7 +1150,7 @@ async def run_publisher():
                 await client.send_message(entity, message, link_preview=False)
                 accepted_at = time.time()
                 delivery_state[group] = accepted_at
-                delivery_state[ACCOUNT_LAST_BLAST_KEY] = accepted_at
+                advance_send_cycle(delivery_state, idx + 1)
                 record_group_status(delivery_state, group, "sent", "Telegram mesajı kabul etti.")
                 _delivery_state_cache.update(delivery_state)
                 save_state(delivery_state)
@@ -1055,7 +1164,10 @@ async def run_publisher():
             except FloodWaitError as exc:
                 wait_sec = exc.seconds
                 status["last_error"] = f"FloodWait {wait_sec}s"
-                delivery_state[ACCOUNT_RESTRICTION_KEY] = time.time() + wait_sec + 2
+                send_cycle_interrupted = True
+                delivery_state[ACCOUNT_RESTRICTION_KEY] = (
+                    time.time() + wait_sec + FLOOD_WAIT_MARGIN_SECONDS
+                )
                 record_group_status(
                     delivery_state,
                     group,
@@ -1065,12 +1177,19 @@ async def run_publisher():
                 )
                 _delivery_state_cache.update(delivery_state)
                 save_state(delivery_state)
-                add_log(f"[SosyalPazarSMM] ⏳ FloodWait {wait_sec}sn; hesap duraklatıldı.")
+                add_log(
+                    f"[SosyalPazarSMM] ⏳ FloodWait {wait_sec}sn; hesap "
+                    f"{FLOOD_WAIT_MARGIN_SECONDS}sn güvenlik payıyla duraklatıldı. "
+                    "Bekleme bitince aynı blast kalan gruplardan sürecek."
+                )
                 break
 
             except (PeerFloodError, UserRestrictedError) as e:
                 wait_sec = getattr(e, "seconds", 48 * 3600) or 48 * 3600
-                delivery_state[ACCOUNT_RESTRICTION_KEY] = time.time() + wait_sec + 2
+                send_cycle_interrupted = True
+                delivery_state[ACCOUNT_RESTRICTION_KEY] = (
+                    time.time() + wait_sec + FLOOD_WAIT_MARGIN_SECONDS
+                )
                 record_group_status(
                     delivery_state,
                     group,
@@ -1151,8 +1270,29 @@ async def run_publisher():
 
             now = time.time()
 
+        if finish_blast_cycle(delivery_state, send_cycle_interrupted):
+            complete_send_cycle(delivery_state)
+            _delivery_state_cache.clear()
+            _delivery_state_cache.update(delivery_state)
+            save_state(delivery_state)
+            add_log(
+                "[SosyalPazarSMM] Hedef listesinin tamamı tarandı; "
+                "bir sonraki blast için 1 saatlik pencere başladı."
+            )
+        elif send_cycle_interrupted:
+            add_log(
+                "[SosyalPazarSMM] Blast Telegram hesap beklemesi nedeniyle duraklatıldı; "
+                "tur tamamlandı olarak işaretlenmedi."
+            )
+
         # 2. JOIN PHASE
-        if not_joined_groups and _bot_running and join_allowed and join_budget_remaining:
+        if (
+            not send_cycle_interrupted
+            and not_joined_groups
+            and _bot_running
+            and join_allowed
+            and join_budget_remaining
+        ):
             add_log(f"\n[SosyalPazarSMM] 🔍 {len(not_joined_groups)} gruba henüz üye değiliz. Katılma başlıyor...")
             # Ana yayıncı ile aynı güvenli katılım limiti: tur başına en fazla
             # JOIN_BATCH_LIMIT başarılı katılım. Geçersiz veya onay bekleyen bir grup bu
@@ -1246,10 +1386,16 @@ async def run_publisher():
                         save_state(delivery_state)
                         add_log(f"[SosyalPazarSMM] ❌ @{group} katılım hatası: {err_type}", "WARNING")
 
-        status["last_cycle"] = datetime.now(timezone.utc).isoformat()
-        status["progress"] = 100
+        if not send_cycle_interrupted:
+            status["last_cycle"] = datetime.now(timezone.utc).isoformat()
+            status["progress"] = 100
         status["current_group"] = None
-        add_log(f"[SosyalPazarSMM] Dongu tamamlandi. Toplam gonderim: {status['sent']}")
+        if send_cycle_interrupted:
+            add_log(
+                f"[SosyalPazarSMM] Dongu duraklatildi. Toplam gonderim: {status['sent']}"
+            )
+        else:
+            add_log(f"[SosyalPazarSMM] Dongu tamamlandi. Toplam gonderim: {status['sent']}")
         await asyncio.sleep(60)
 
 
